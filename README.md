@@ -6,6 +6,8 @@ A large view of one workspace sits at the top, a strip with one tile per workspa
 bottom. Windows are live (videos keep playing), and you can drag them to place them in the
 layout, move them to another workspace, hide them in a special workspace or close them.
 
+![hyprdrop: the top view shows one workspace live, the strip below has one tile per workspace, the Hidden tile and the trash](docs/screenshot.png)
+
 ## Features
 
 - **Top view**: one workspace, shown live. Drag a window inside it to place it in the layout;
