@@ -182,6 +182,8 @@ internals.
 
 ## Credits
 
+- Built with [Claude Code](https://claude.com/claude-code): lauwr designed the behavior and
+  tested every step; the code was written with Claude Code.
 - Trash icon: [Phosphor Icons](https://phosphoricons.com) (MIT license).
 - Inspired by [Hyprspace](https://github.com/KZDKM/Hyprspace) and
   [hyprexpo](https://github.com/hyprwm/hyprland-plugins).
