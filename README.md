@@ -116,6 +116,70 @@ On a touchscreen or with a stylus, a tap on a tile shows it and a second tap goe
 - App icons come from `hicolor` and `/usr/share/pixmaps` only, not from your icon theme.
 - It uses Hyprland internals, so each Hyprland release may need a rebuild or a fix.
 
+## Development
+
+### Code layout
+
+| File | Role |
+|---|---|
+| `src/hyprdrop.hpp` | Shared state, types and declarations. Starts with the vocabulary used everywhere (top view, strip, D, A). |
+| `src/main.cpp` | Plugin entry and exit, Lua functions, event hooks, per-frame live capture. |
+| `src/capture.cpp` | Renders each window and the wallpaper into textures; finds workspaces. |
+| `src/layout.cpp` | Where everything goes on screen (one function for drawing and hit-testing), animation progress. |
+| `src/overview.cpp` | What clicks and drops do: drag, place, move to a workspace, close, go to. |
+| `src/input.cpp` | Mouse, touchscreen, stylus, keyboard, touchpad gestures, scroll. |
+| `src/render.cpp` | Drawing: views, tiles, labels, icons, borders, trash, ghost. |
+
+Each `.cpp` keeps its own state `static`; only what several files use is in the header.
+
+### Build, reload, debug
+
+```sh
+make -j"$(nproc)"
+# Reloading the same path may keep the old code in memory: load a fresh copy.
+cp hyprdrop.so /tmp/hyprdrop-$(date +%s).so
+hyprctl plugin unload <path of the loaded copy>   # unload first: it removes hl.plugin.hyprdrop
+hyprctl plugin load /tmp/hyprdrop-<timestamp>.so
+```
+
+Turn the log on without editing the config, then read it:
+
+```sh
+hyprctl eval 'hl.config({ plugin = { hyprdrop = { debug = true } } })'
+tail -f "$XDG_RUNTIME_DIR/hyprdrop.log"
+```
+
+Every action is logged (press, drag, placement, capture, workspace change), and each close
+logs the frame rate of the session. Per-frame captures are not logged.
+
+### When a Hyprland update breaks the build
+
+hyprdrop uses Hyprland internals, which can be renamed or changed between releases. They are
+reached with `#define protected public` / `#define private public` in `hyprdrop.hpp`. What it
+relies on, by file:
+
+- `capture.cpp`: `beginRender` / `endRender` with `RENDER_MODE_FULL_FAKE`, `renderWindow`,
+  `renderLayer`, `m_renderData.blockScreenShader`, `createFB`; swapping
+  `m_activeWorkspace` / `m_activeSpecialWorkspace` / `m_visible` with
+  `Animation::Workspace::startAnimation` to render hidden workspaces; `CWindow::m_suspended` /
+  `setSuspended` and the surface `frame()` callbacks to keep hidden windows drawing;
+  `m_reservedArea`, `m_layerSurfaceLayers`, `getWorkspaceRuleFor`.
+- `overview.cpp`: `g_layoutManager->beginDragTarget` / `moveMouse` / `endDragTarget` (the
+  native drag replayed to place a tiled window, with the cursor moved by
+  `pointerController()->warpTo` meanwhile), `setTargetGeom`,
+  `State::workspaceState()->create`, `Config::Actions::*` (`moveToWorkspace`,
+  `changeWorkspace`, `toggleSpecial`, `focus`, `closeWindow`).
+- `render.cpp`: `m_renderPass` with `CRectPassElement`, `CTexPassElement`,
+  `CBorderPassElement`; `renderText`, `createTexture`; config values
+  `general:col.active_border`, `decoration:rounding`, `misc:font_family`.
+- `main.cpp`: `Event::bus()` events, `updateSuspendedStates` (gives the suspended state back
+  on close), `addConfigValueV2`, `addLuaFunction`.
+- `input.cpp`: `Pointer::Cursor::overrideController` (cursor shape while open).
+
+A build error usually names the member that moved: look for it in the matching Hyprland
+release's headers (`/usr/include/hyprland/src`) and in hyprexpo, which uses the same kind of
+internals.
+
 ## Credits
 
 - Trash icon: [Phosphor Icons](https://phosphoricons.com) (MIT license).
