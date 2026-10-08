@@ -1,0 +1,9 @@
+[repository]
+name = "hyprdrop"
+authors = ["lauwr"]
+
+[hyprdrop]
+description = "Workspace overview with drag and drop"
+authors = ["lauwr"]
+output = "hyprdrop.so"
+build = ["make -j4"]
