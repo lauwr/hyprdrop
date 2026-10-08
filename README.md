@@ -76,12 +76,13 @@ hl.bind(mainMod .. " + mouse:272", function() hl.plugin.hyprdrop.drag() end, { m
 hl.gesture({ fingers = 3, direction = "up",   action = function() hl.plugin.hyprdrop.gesture_up() end })
 hl.gesture({ fingers = 3, direction = "down", action = function() hl.plugin.hyprdrop.gesture_down() end })
 
--- Options (both default to false)
+-- Options (zqsd and debug default to false)
 hl.config({
     plugin = {
         hyprdrop = {
-            zqsd  = true, -- the keys at the W A S D positions (Z Q S D on AZERTY) also navigate
-            debug = true, -- write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log
+            zqsd       = true,     -- the keys at the W A S D positions (Z Q S D on AZERTY) also navigate
+            icon_theme = "breeze", -- icon theme for app icons; default: your desktop's (GTK, KDE, gsettings)
+            debug      = true,     -- write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log
         },
     },
 })
@@ -95,6 +96,8 @@ hl.config({
 | `gesture_up()` / `gesture_down()` | For touchpad gestures, see above. |
 
 Colors follow your config: `general:col.active_border`, `decoration:rounding`, `general:gaps_in`.
+App icons come from your icon theme (and the themes it inherits), then `hicolor`, then
+`/usr/share/pixmaps`.
 
 ## Usage
 
@@ -165,7 +168,6 @@ without going there.
 
 - One monitor: the overview opens on the focused monitor and does not handle the others.
 - The special workspace is `special:magic`; other special workspaces are not shown.
-- App icons come from `hicolor` and `/usr/share/pixmaps` only, not from your icon theme.
 - It uses Hyprland internals, so each Hyprland release may need a rebuild or a fix.
 
 ## Development

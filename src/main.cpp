@@ -243,6 +243,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     g_hyprdropZqsd = makeShared<Config::Values::CBoolValue>("plugin:hyprdrop:zqsd", "Z Q S D (W A S D positions) also navigate in the overview", false);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropZqsd);
+    g_hyprdropIconTheme = makeShared<Config::Values::CStringValue>("plugin:hyprdrop:icon_theme", "icon theme for app icons, empty = the desktop's", "");
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropIconTheme);
     g_hyprdropDebug = makeShared<Config::Values::CBoolValue>("plugin:hyprdrop:debug", "write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log", false);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropDebug);
 

@@ -76,10 +76,122 @@ static void hyprdropAddRoundBorder(const CBox& box, double round, float rounding
 }
 
 // App icon of a window, from its class: <class>.desktop (or a desktop file whose
-// StartupWMClass is the class) gives the icon name, looked up in hicolor and pixmaps.
-// Cached by class, misses included. Logical size HYPRDROP_ICON_SIZE at most.
-// ponytail: no icon theme resolution (hicolor + pixmaps only); add the user's theme if icons are missing
+// StartupWMClass is the class) gives the icon name, looked up in the icon theme (and the
+// themes it inherits, then hicolor), then in pixmaps. Cached by class, misses included.
+// Logical size HYPRDROP_ICON_SIZE at most.
 static constexpr double                     HYPRDROP_ICON_SIZE = 64.0;
+
+// Icon theme name: plugin:hyprdrop:icon_theme, else GTK's settings.ini, KDE's kdeglobals,
+// then gsettings (run once); "hicolor" if none.
+static std::string hyprdropIconThemeName() {
+    if (g_hyprdropIconTheme && !g_hyprdropIconTheme->value().empty())
+        return g_hyprdropIconTheme->value();
+
+    const std::string HOME = getenv("HOME") ? getenv("HOME") : "";
+    const auto        KEY  = [](const std::string& file, const std::string& section, const std::string& key) -> std::string {
+        std::ifstream in(file);
+        std::string   line, cur;
+        while (std::getline(in, line)) {
+            if (line.starts_with("["))
+                cur = line;
+            else if (cur == section && line.starts_with(key + "=")) {
+                auto v = line.substr(key.size() + 1);
+                std::erase_if(v, [](char c) { return c == ' ' || c == '"' || c == '\r'; });
+                return v;
+            }
+        }
+        return "";
+    };
+    for (const auto& gtk : {"/.config/gtk-4.0/settings.ini", "/.config/gtk-3.0/settings.ini"}) {
+        if (auto t = KEY(HOME + gtk, "[Settings]", "gtk-icon-theme-name"); !t.empty())
+            return t;
+    }
+    if (auto t = KEY(HOME + "/.config/kdeglobals", "[Icons]", "Theme"); !t.empty())
+        return t;
+    auto t = execAndGet("gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null");
+    std::erase_if(t, [](char c) { return c == '\'' || c == '\n' || c == ' '; });
+    return t.empty() ? "hicolor" : t;
+}
+
+// Directories holding application icons, one list per theme, in lookup order: the theme,
+// the themes it inherits (breadth first), hicolor last. Within a theme, larger sizes first;
+// symbolic (monochrome) icons are left out. Read from each theme's index.theme, built once.
+// ponytail: built once per plugin load; icon_theme changes need a reload
+static const std::vector<std::vector<std::string>>& hyprdropIconDirs() {
+    static std::vector<std::vector<std::string>> dirs;
+    static bool                     built = false;
+    if (built)
+        return dirs;
+    built = true;
+
+    const std::string        HOME  = getenv("HOME") ? getenv("HOME") : "";
+    const std::vector<std::string> BASES = {HOME + "/.local/share/icons", HOME + "/.icons", "/usr/share/icons"};
+    std::vector<std::string> queue = {hyprdropIconThemeName()};
+    std::set<std::string>    seen;
+    std::error_code          ec;
+
+    for (size_t qi = 0; qi < queue.size() || !seen.contains("hicolor"); ++qi) {
+        const std::string THEME = qi < queue.size() ? queue[qi] : "hicolor";
+        if (qi >= queue.size())
+            queue.push_back(THEME);
+        if (!seen.insert(THEME).second)
+            continue;
+
+        for (const auto& base : BASES) {
+            const std::string ROOT = base + "/" + THEME;
+            std::ifstream     in(ROOT + "/index.theme");
+            if (!in)
+                continue;
+            struct SDir {
+                std::string path;
+                int         size = 0;
+                bool        apps = false;
+            };
+            std::map<std::string, SDir> sections;
+            std::string                 line, cur;
+            while (std::getline(in, line)) {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (line.starts_with("[") && line.ends_with("]")) {
+                    cur = line.substr(1, line.size() - 2);
+                    continue;
+                }
+                const auto EQ = line.find('=');
+                if (EQ == std::string::npos)
+                    continue;
+                const auto K = line.substr(0, EQ), V = line.substr(EQ + 1);
+                if (cur == "Icon Theme" && K == "Inherits") {
+                    std::stringstream ss(V);
+                    for (std::string t; std::getline(ss, t, ',');)
+                        queue.push_back(t);
+                } else if (cur != "Icon Theme") {
+                    auto& d = sections[cur];
+                    d.path  = ROOT + "/" + cur;
+                    if (K == "Context")
+                        d.apps = V == "Applications" || V == "Apps";
+                    else if (K == "Size")
+                        d.size = std::atoi(V.c_str());
+                }
+            }
+            std::vector<SDir> apps;
+            for (const auto& [name, d] : sections) {
+                if (d.apps && !name.contains("symbolic") && std::filesystem::is_directory(d.path, ec))
+                    apps.push_back(d);
+            }
+            std::ranges::sort(apps, [](const SDir& a, const SDir& b) { return a.size > b.size; });
+            auto& list = dirs.emplace_back();
+            for (const auto& d : apps)
+                list.push_back(d.path);
+        }
+    }
+    dbg(std::format("icon: theme '{}', looked up in: {}", queue.front(), [&] {
+        std::string s;
+        for (const auto& t : seen)
+            s += (s.empty() ? "" : ", ") + t;
+        return s;
+    }()));
+    return dirs;
+}
 
 static std::string hyprdropDesktopIconName(const std::string& cls) {
     const std::string HOME = getenv("HOME") ? getenv("HOME") : "";
@@ -127,14 +239,15 @@ static SP<Render::ITexture> hyprdropIconOf(PHLWINDOW w, double monScale) {
 
     auto&             tex  = g_hyprdropIcons[w->m_class];
     const std::string NAME = hyprdropDesktopIconName(w->m_class);
-    const std::string HOME = getenv("HOME") ? getenv("HOME") : "";
     std::vector<std::string> candidates;
     if (NAME.starts_with("/"))
         candidates.push_back(NAME);
-    for (const auto& base : {HOME + "/.local/share/icons/hicolor", std::string{"/usr/share/icons/hicolor"}}) {
-        candidates.push_back(base + "/scalable/apps/" + NAME + ".svg");
-        for (const auto* SZ : {"256x256", "512x512", "128x128", "96x96", "64x64", "48x48"})
-            candidates.push_back(base + "/" + SZ + "/apps/" + NAME + ".png");
+    // Theme by theme: its SVGs first (sharp at any size), then its PNGs, largest first.
+    for (const auto& theme : hyprdropIconDirs()) {
+        for (const auto* EXT : {".svg", ".png"}) {
+            for (const auto& dir : theme)
+                candidates.push_back(dir + "/" + NAME + EXT);
+        }
     }
     candidates.push_back("/usr/share/pixmaps/" + NAME + ".svg");
     candidates.push_back("/usr/share/pixmaps/" + NAME + ".png");

@@ -60,6 +60,7 @@
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/config/shared/workspace/WorkspaceRuleManager.hpp>
 #include <hyprland/src/config/values/types/BoolValue.hpp>
+#include <hyprland/src/config/values/types/StringValue.hpp>
 #undef protected
 #undef private
 
@@ -237,6 +238,8 @@ inline bool                g_hyprdropWarping = false;
 
 // plugin:hyprdrop:zqsd: the keys at the W A S D positions (Z Q S D in AZERTY) also navigate.
 inline SP<Config::Values::CBoolValue> g_hyprdropZqsd;
+// plugin:hyprdrop:icon_theme: icon theme for app icons; empty = the desktop's (GTK, KDE, gsettings).
+inline SP<Config::Values::CStringValue> g_hyprdropIconTheme;
 
 // This horizontal swipe already changed the workspace shown (one step per swipe).
 inline bool g_hyprdropSwipeStepped = false;
