@@ -6,7 +6,9 @@ A large view of one workspace sits at the top, a strip with one tile per workspa
 bottom. Windows are live (videos keep playing), and you can drag them to place them in the
 layout, move them to another workspace, hide them in a special workspace or close them.
 
-![hyprdrop: the top view shows one workspace live, the strip below has one tile per workspace, the Hidden tile and the trash](docs/screenshot.png)
+[![hyprdrop demo: opening, hovering tiles, dragging windows in the top view, to a tile and to the trash](docs/demo.gif)](docs/demo.mp4)
+
+Better quality: [docs/demo.mp4](docs/demo.mp4).
 
 ## Features
 
@@ -23,6 +25,8 @@ layout, move them to another workspace, hide them in a special workspace or clos
   the overview.
 - Mouse, touchpad gestures, touchscreen, stylus and keyboard.
 - Open / close and workspace-change animations; app icons on windows.
+
+![hyprdrop: the top view shows one workspace live, the strip below has one tile per workspace, the Hidden tile and the trash](docs/screenshot.png)
 
 ## Requirements
 
