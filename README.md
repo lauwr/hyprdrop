@@ -24,7 +24,8 @@ layout, move them to another workspace, hide them in a special workspace or clos
 
 ## Requirements
 
-- Hyprland **0.56** with a Lua config (`hyprland.lua`).
+- Hyprland **0.56** with a Lua config (`hyprland.lua`). Developed and tested on **0.56.2**;
+  other releases may need a fix (see [When a Hyprland update breaks the build](#when-a-hyprland-update-breaks-the-build)).
 - To build: a C++23 compiler, `make`, `pkg-config` and Hyprland's headers (installed by
   `hyprpm update`, or with your distribution's Hyprland development package).
 
@@ -57,10 +58,10 @@ hyprdrop only does something when you call it. Example `hyprland.lua`:
 ```lua
 local mainMod = "SUPER"
 
--- Open on special:magic (on the current workspace if it is empty), or close
-hl.bind(mainMod .. " + A", function() hl.plugin.hyprdrop.toggle() end)
 -- Open on the current workspace, or close
-hl.bind(mainMod .. " + Z", function() hl.plugin.hyprdrop.toggle_current() end)
+hl.bind(mainMod .. " + TAB", function() hl.plugin.hyprdrop.toggle_current() end)
+-- Open on special:magic (on the current workspace if it is empty), or close
+hl.bind(mainMod .. " + SHIFT + TAB", function() hl.plugin.hyprdrop.toggle_hidden() end)
 
 -- Super + left button on a window: drag it into the overview
 hl.bind(mainMod .. " + mouse:272", function() hl.plugin.hyprdrop.drag() end, { mouse = true })
@@ -82,7 +83,7 @@ hl.config({
 
 | Lua function | Effect |
 |---|---|
-| `toggle()` | Opens with `special:magic` at the top (the current workspace if it is empty), or closes. |
+| `toggle_hidden()` | Opens with `special:magic` at the top (the current workspace if it is empty), or closes. |
 | `toggle_current()` | Opens with the current workspace at the top, or closes. |
 | `drag()` | Opens with the window under the cursor already dragged (bind it to a mouse button). |
 | `gesture_up()` / `gesture_down()` | For touchpad gestures, see above. |
@@ -102,12 +103,57 @@ Colors follow your config: `general:col.active_border`, `decoration:rounding`, `
 | Drag a window to a tile | Moves it to that workspace (rest on the tile to stay open) |
 | Drag a window to the trash | Closes it |
 | Click the trash | Toggles the delete mode (a click on a window closes it) |
-| Click the background, Escape | Closes the overview |
+| Click the background, Escape, the key bind that opened it | Closes the overview |
 | Enter, Space | Goes to the workspace shown at the top |
 | Arrows, keypad 4 6 8 2 | Changes the workspace shown at the top |
 | 3-finger horizontal swipe | Changes the workspace shown at the top |
 
 On a touchscreen or with a stylus, a tap on a tile shows it and a second tap goes there.
+
+### Drag and drop
+
+Press a window in the top view and move it a few pixels: the drag starts. A ghost of the
+window (half size, translucent, with its icon) follows the pointer. A press that doesn't
+move stays a click.
+
+Where you release it:
+
+| Released on | Effect | Overview |
+|---|---|---|
+| The top view | The window is placed there in the layout | Stays open |
+| A tile, after resting on it | Moved to that workspace | Stays open, showing that workspace |
+| A tile, without resting | Moved to that workspace | Closes |
+| The trash | The window is asked to close (it may still ask to save) | Stays open |
+| Anywhere else | Cancelled: the window goes back where it was | Stays open |
+
+While you drag:
+
+- **Resting in the top view** (about 70 ms) already places the window: the layout shows
+  where it will land, and moves again each time you rest somewhere else.
+- **Resting on a tile** (half a second) shows that workspace at the top, so you can place the
+  window precisely in it. The tile under a drag gets a white border; the trash turns red.
+
+**Drag mode** (`drag()`, e.g. Super + left button on a desktop window) opens the overview
+on the current workspace with that window already held. It works the same, except that:
+
+- released in the top view on the current workspace, the window is placed and the overview
+  closes, like Hyprland's own window drag;
+- released on the trash, the window is asked to close and the overview closes;
+- released anywhere else than a tile, the top view or the trash, the drag is cancelled and
+  the overview closes.
+
+### Touchpad gestures
+
+With `gesture_up()` / `gesture_down()` bound to 3-finger swipes (see Configuration):
+
+| State | Up | Down |
+|---|---|---|
+| Nothing open | Opens the overview | Nothing |
+| Overview open | Closes it and opens `special:magic` | Closes it |
+| `special:magic` open (however it was opened) | Closes it, opens the overview on the workspace under it | Closes it |
+
+A horizontal swipe while the overview is open changes the workspace shown at the top
+without going there.
 
 ## Limitations
 

@@ -38,6 +38,7 @@ void hyprdropToggle(eHyprdropOpenMode mode) {
     g_hyprdropDeleteMode    = false;
     if (g_hyprdropOpen) {
         g_hyprdropNeedCapture = true;
+        hyprdropRememberOpenKey();
         // A lost touch up must not leave the mouse ignored for the whole session.
         g_hyprdropTouchID = -1;
     }
@@ -47,7 +48,7 @@ void hyprdropToggle(eHyprdropOpenMode mode) {
         g_pHyprRenderer->damageMonitor(MON);
 }
 
-// hl.plugin.hyprdrop.toggle(): opens with D = special:magic (fetch a window back), or closes.
+// hl.plugin.hyprdrop.toggle_hidden(): opens with D = special:magic (fetch a window back), or closes.
 static int luaToggle(lua_State*) {
     hyprdropToggle(HYPRDROP_OPEN_MAGIC);
     return 0;
@@ -66,13 +67,13 @@ static int luaDrag(lua_State*) {
     return 0;
 }
 
-// Up / down gestures (hl.gesture in hyprland.lua calls gesture_up() / gesture_down()):
-//   closed          + up   -> open the overview (like toggle())
-//   open            + up   -> close it and open special:magic
-//   magic opened by an up  + down -> close special:magic, back to the initial workspace
-//   open            + down -> close the overview
-static bool g_hyprdropGestureMagic = false; // special:magic was opened by gesture_up()
-
+// Up / down gestures (hl.gesture in hyprland.lua calls gesture_up() / gesture_down()).
+// special:magic counts as open however it was opened (gesture, bind, click...):
+//   closed, magic closed + up   -> open the overview (like toggle_hidden())
+//   closed, magic open   + up   -> close magic, open the overview on the workspace under it
+//   open                 + up   -> close it and open special:magic
+//   open                 + down -> close the overview
+//   closed, magic open   + down -> close special:magic, back to the workspace under it
 static PHLWORKSPACE hyprdropMagicOpenOn(PHLMONITOR mon) {
     const auto SPECIAL = mon ? mon->m_activeSpecialWorkspace : nullptr;
     return SPECIAL && SPECIAL->m_name == HYPRDROP_MAGIC_NAME ? SPECIAL : nullptr;
@@ -83,12 +84,12 @@ static int luaGestureUp(lua_State*) {
     if (!MON)
         return 0;
 
-    if (g_hyprdropGestureMagic && !hyprdropMagicOpenOn(MON))
-        g_hyprdropGestureMagic = false; // closed some other way meanwhile
-
     if (!g_hyprdropOpen) {
-        if (g_hyprdropGestureMagic) {
-            dbg("gesture up: special:magic already open, ignored");
+        if (const auto MAGIC = hyprdropMagicOpenOn(MON)) {
+            dbg("gesture up: " + HYPRDROP_MAGIC_NAME + " is open, closing it and opening on the workspace under it");
+            if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
+                dbg("gesture up: closing " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
+            hyprdropToggle(HYPRDROP_OPEN_CURRENT);
             return 0;
         }
         dbg("gesture up: opening");
@@ -109,13 +110,10 @@ static int luaGestureUp(lua_State*) {
     }
     if (hyprdropMagicOpenOn(MON)) {
         dbg("gesture up: " + HYPRDROP_MAGIC_NAME + " already open");
-        g_hyprdropGestureMagic = true;
         return 0;
     }
     if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
         dbg("gesture up: opening " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
-    else
-        g_hyprdropGestureMagic = true;
     return 0;
 }
 
@@ -130,16 +128,13 @@ static int luaGestureDown(lua_State*) {
         return 0;
     }
 
-    const auto MAGIC = hyprdropMagicOpenOn(MON);
-    if (g_hyprdropGestureMagic && MAGIC) {
-        dbg("gesture down: closing " + HYPRDROP_MAGIC_NAME + ", back to the initial workspace");
-        g_hyprdropGestureMagic = false;
+    if (const auto MAGIC = hyprdropMagicOpenOn(MON)) {
+        dbg("gesture down: closing " + HYPRDROP_MAGIC_NAME + ", back to the workspace under it");
         if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
             dbg("gesture down: closing " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
         return 0;
     }
 
-    g_hyprdropGestureMagic = false;
     dbg("gesture down: nothing to do");
     return 0;
 }
@@ -251,7 +246,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_hyprdropDebug = makeShared<Config::Values::CBoolValue>("plugin:hyprdrop:debug", "write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log", false);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropDebug);
 
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprdrop", "toggle", luaToggle);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprdrop", "toggle_hidden", luaToggle);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprdrop", "toggle_current", luaToggleCurrent);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprdrop", "drag", luaDrag);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprdrop", "gesture_up", luaGestureUp);

@@ -16,8 +16,31 @@ static bool g_hyprdropTipDown = false;
 // window is really placed there, so the top view shows the final layout. Where it was
 // before the first preview placement is kept, to put it back if the drag is cancelled
 // (approximately for tiled windows). The ghost still follows the cursor.
-static constexpr auto HYPRDROP_PREVIEW_DELAY = std::chrono::milliseconds(150);
+static constexpr auto HYPRDROP_PREVIEW_DELAY = std::chrono::milliseconds(70);
 static Vector2D       g_hyprdropPreviewAnchor; // pointer position when the delay started
+
+// The mouse was just on special:magic's tile or the trash, on the second row: going back up
+// to the top view crosses the numbered row, and the tile crossed must not replace what is
+// shown. The next tile hovered by the mouse is therefore not shown (once; the pointer
+// reaching the top view clears it too). Touch is not concerned: a tap shows its tile.
+static bool g_hyprdropSkipNextHover = false;
+
+// The key whose bind opened the overview (toggle_current() / toggle_hidden() from a key
+// bind), -1 = none (gesture, drag...). While open, pressing that key again is let through
+// to Hyprland, so the same bind closes it. A bind runs right after our listener let its key
+// through: a key pressed within HYPRDROP_OPEN_KEY_WINDOW before opening is taken as its key.
+// ponytail: time-based guess, a bind reached otherwise just after a key press could be misread
+static constexpr auto                        HYPRDROP_OPEN_KEY_WINDOW = std::chrono::milliseconds(100);
+static int64_t                               g_hyprdropLastKey        = -1;
+static std::chrono::steady_clock::time_point g_hyprdropLastKeyTime;
+static int64_t                               g_hyprdropOpenKey        = -1;
+
+void hyprdropRememberOpenKey() {
+    const bool RECENT = std::chrono::steady_clock::now() - g_hyprdropLastKeyTime < HYPRDROP_OPEN_KEY_WINDOW;
+    g_hyprdropOpenKey = RECENT ? g_hyprdropLastKey : -1;
+    if (g_hyprdropOpenKey >= 0)
+        dbg("key: opened by key " + std::to_string(g_hyprdropOpenKey) + ", pressing it again goes to its bind");
+}
 
 // Keys whose press the overview swallowed: their release is swallowed too, so Hyprland
 // never sees half a key (a stuck modifier...). Releases of keys pressed before opening go through.
@@ -58,14 +81,25 @@ static void hyprdropPointerMoved(PHLMONITOR MON, const Vector2D& P) {
         g_pHyprRenderer->damageMonitor(MON);
     }
 
+    const bool MOUSE = g_hyprdropTouchID < 0;
+    if (MOUSE && (g_hyprdropTrashHover || (hover >= 0 && g_hyprdropTiles[hover] == g_hyprdropMagicID)))
+        g_hyprdropSkipNextHover = true;
+    else if (L.top.containsPoint(P))
+        g_hyprdropSkipNextHover = false;
+
     if (hover != g_hyprdropHover) {
         g_hyprdropHover = hover;
         dbg("hover: tile " + std::to_string(hover));
         g_pHyprRenderer->damageMonitor(MON);
 
         // Without a drag, hovering a tile shows it in the top view, like a click.
-        if (!hyprdropDragging() && hover >= 0)
-            hyprdropShowOnTop(hover, "hover");
+        if (!hyprdropDragging() && hover >= 0) {
+            if (MOUSE && g_hyprdropSkipNextHover && g_hyprdropTiles[hover] != g_hyprdropMagicID) {
+                g_hyprdropSkipNextHover = false;
+                dbg("hover: tile " + std::to_string(hover) + " crossed coming from the second row, not shown");
+            } else
+                hyprdropShowOnTop(hover, "hover");
+        }
 
         if (hyprdropDragging()) {
             g_hyprdropHoverLocked = false;
@@ -386,8 +420,16 @@ void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
         return;
     }
 
+    g_hyprdropLastKey     = e.keycode;
+    g_hyprdropLastKeyTime = std::chrono::steady_clock::now();
+
     if (!g_hyprdropOpen || hyprdropKeyPassesThrough(e.keycode))
         return;
+
+    if ((int64_t)e.keycode == g_hyprdropOpenKey) {
+        dbg("key: the key that opened the overview, let through to its bind");
+        return;
+    }
 
     info.cancelled = true;
     g_hyprdropBlockedKeys.insert(e.keycode);

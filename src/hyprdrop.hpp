@@ -164,7 +164,7 @@ inline WORKSPACEID       g_hyprdropMagicID   = WORKSPACE_INVALID;
 
 // What D is when the overview opens.
 enum eHyprdropOpenMode : uint8_t {
-    HYPRDROP_OPEN_MAGIC,   // toggle(): D = special:magic (or A if it is empty), to fetch a window back
+    HYPRDROP_OPEN_MAGIC,   // toggle_hidden(): D = special:magic (or A if it is empty), to fetch a window back
     HYPRDROP_OPEN_CURRENT, // toggle_current(): D = A
 };
 inline eHyprdropOpenMode g_hyprdropOpenMode = HYPRDROP_OPEN_MAGIC;
@@ -319,6 +319,7 @@ void hyprdropOnTouchCancel(const ITouch::SCancelEvent& e, Event::SCallbackInfo& 
 void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnTabletTip(const CTablet::STipEvent& e, Event::SCallbackInfo& info);
 void hyprdropToggle(eHyprdropOpenMode mode);
+void hyprdropRememberOpenKey();
 void hyprdropOnSwipeBegin(const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&);
 void hyprdropOnSwipeUpdate(const IPointer::SSwipeUpdateEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnSwipeEnd(const IPointer::SSwipeEndEvent& e, Event::SCallbackInfo&);
