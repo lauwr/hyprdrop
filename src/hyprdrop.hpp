@@ -80,6 +80,10 @@
 inline HANDLE PHANDLE        = nullptr;
 inline bool   g_hyprdropOpen = false; // whether the overview is open (it may still be closing: hyprdropVisible())
 
+// The monitor the overview opened on. It stays there (drawing, input, captures) even if
+// the focus moves to another monitor: see hyprdropMonitor().
+inline PHLMONITORREF g_hyprdropMon;
+
 // ---------------------------------------------------------------- log
 
 // Debug log, off by default (plugin:hyprdrop:debug = true turns it on). It holds window
@@ -108,12 +112,15 @@ struct SHyprdropWinCapture {
     HyprdropFB   fb;
     CBox         box; // window box at capture time, logical, relative to the usable area's corner
     WORKSPACEID  ws = WORKSPACE_INVALID;
+    // The monitor it was rendered on (its workspace's, maybe not the overview's): logical
+    // size, and its usable area's corner (monitor-local). The texture covers that monitor.
+    Vector2D monSize;
+    Vector2D usablePos;
 };
 
 // Captures by workspace id, in drawing order (bottom to top), redone on every frame while
 // the overview is visible. A workspace that doesn't exist or has no windows has no entry.
 inline std::map<WORKSPACEID, std::vector<SHyprdropWinCapture>> g_hyprdropCaptures;
-inline Vector2D g_hyprdropCaptureMonSize; // logical size of the captured monitor
 // Usable area of the captured monitor (monitor minus the space reserved by the bar),
 // logical, relative to the monitor. Views show this area, not the whole monitor.
 inline CBox   g_hyprdropCaptureUsable;
@@ -132,6 +139,9 @@ struct SHyprdropFit {
     double   scale = 1.0;
     Vector2D offset;
     Vector2D gap = {-1, -1}; // extra space per axis (logical px, after the fit); -1 = not computed
+    // Global position of the usable area's corner on the workspace's monitor: where a point
+    // of the view lands on the real layout. Unset = the overview's monitor.
+    std::optional<Vector2D> origin;
 };
 inline std::map<WORKSPACEID, SHyprdropFit> g_hyprdropFits;
 
@@ -183,6 +193,7 @@ struct SHyprdropLayout {
     std::vector<CBox> tiles;
     CBox              activeBar; // bar under A's tile, empty if A has no tile
     CBox              trash;     // next to special:magic's tile: dropping a window there closes it
+    std::vector<CBox> labels;    // under each tile (same order): where its name is written
 };
 
 // ---------------------------------------------------------------- pointer and drag
@@ -322,6 +333,7 @@ void hyprdropOnTouchCancel(const ITouch::SCancelEvent& e, Event::SCallbackInfo& 
 void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnTabletTip(const CTablet::STipEvent& e, Event::SCallbackInfo& info);
 void hyprdropToggle(eHyprdropOpenMode mode);
+PHLMONITOR hyprdropMonitor();
 void hyprdropRememberOpenKey();
 void hyprdropOnSwipeBegin(const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&);
 void hyprdropOnSwipeUpdate(const IPointer::SSwipeUpdateEvent& e, Event::SCallbackInfo& info);

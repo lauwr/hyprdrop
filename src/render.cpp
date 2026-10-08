@@ -7,7 +7,7 @@ static void hyprdropAddRoundBorder(const CBox& box, double round, float rounding
 static std::string hyprdropDesktopIconName(const std::string& cls);
 static SP<Render::ITexture> hyprdropIconOf(PHLWINDOW w, double monScale);
 static void hyprdropAddIcon(PHLWINDOW w, const CBox& win, double monScale, const CBox& clip = {}, float alpha = 1.F);
-static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& tile, double monScale);
+static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& area, double monScale);
 static void hyprdropAddWorkspace(WORKSPACEID id, const CBox& box, double monScale, const CHyprColor& bg, std::optional<CBox> clip = std::nullopt);
 
 // Everything is laid out in logical px (like the pointer), but render pass elements take
@@ -290,16 +290,17 @@ static void hyprdropAddIcon(PHLWINDOW w, const CBox& win, double monScale, const
     g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(data));
 }
 
-// Workspace number in the middle of the tile, as on the keyboard: workspace 10 is "0".
-// special:magic shows "Hidden". Text textures are made once and kept.
-static constexpr int    HYPRDROP_LABEL_PT      = 14;
+// Workspace name under its tile (in `area`), as on the keyboard: workspace 10 is "0".
+// special:magic shows "Hidden". A workspace living on another monitor shows that monitor's
+// name too. Text textures are made once and kept.
+static constexpr int HYPRDROP_LABEL_PT = 14;
 
-static constexpr double HYPRDROP_LABEL_INSET   = 3.0; // logical px, around the text in its box
-
-static const CHyprColor HYPRDROP_LABEL_BG      = CHyprColor{0.0, 0.0, 0.0, 1.0};
-
-static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& tile, double monScale) {
-    const std::string TEXT = id == g_hyprdropMagicID ? "Hidden" : id == 10 ? "0" : std::to_string(id);
+static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& area, double monScale) {
+    std::string TEXT = id == g_hyprdropMagicID ? "Hidden" : id == 10 ? "0" : std::to_string(id);
+    if (const auto WS = hyprdropFindWorkspace(id)) {
+        if (const auto WSMON = WS->m_monitor.lock(); WSMON && WSMON != hyprdropMonitor())
+            TEXT += " · " + WSMON->m_name;
+    }
 
     auto& tex = g_hyprdropLabels[TEXT];
     if (!tex) {
@@ -314,18 +315,13 @@ static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& tile, double monSca
     if (!tex)
         return;
 
-    // Box behind the text, centered in the tile: a square around a single digit, otherwise
-    // the text plus a margin (a bit more on the sides).
+    // Centered in its area, straight on the strip.
     const Vector2D TS  = tex->m_size / monScale;
-    const Vector2D PAD = {TS.x > TS.y ? 3 * HYPRDROP_LABEL_INSET : HYPRDROP_LABEL_INSET, HYPRDROP_LABEL_INSET};
-    Vector2D       BOX = TS + PAD * 2;
-    BOX.x              = std::max(BOX.x, BOX.y);
-    const Vector2D SQ   = tile.pos() + (tile.size() - BOX) / 2.0;
-    hyprdropAddRect({SQ.x, SQ.y, BOX.x, BOX.y}, HYPRDROP_LABEL_BG);
+    const Vector2D POS = area.pos() + (area.size() - TS) / 2.0;
 
     CTexPassElement::SRenderData data;
     data.tex    = tex;
-    data.box    = PX({SQ.x + (BOX.x - TS.x) / 2, SQ.y + (BOX.y - TS.y) / 2, TS.x, TS.y});
+    data.box    = PX({POS.x, POS.y, TS.x, TS.y});
     data.damage = CRegion{0, 0, INT16_MAX, INT16_MAX};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(data));
 }
@@ -486,7 +482,7 @@ void hyprdropDraw(PHLMONITOR mon) {
         hyprdropAddWorkspace(g_hyprdropTiles[i], L.tiles[i], mon->m_scale, HYPRDROP_TILE_BG);
         if (ISSHOWN || ISDROP)
             hyprdropAddBorder(L.tiles[i], HYPRDROP_TILE_BORDER, ISDROP ? HYPRDROP_DROP_BORDER : hyprdropActiveBorderColor());
-        hyprdropAddTileLabel(g_hyprdropTiles[i], L.tiles[i], mon->m_scale);
+        hyprdropAddTileLabel(g_hyprdropTiles[i], L.labels[i], mon->m_scale);
     }
 
     if (!L.activeBar.empty())
@@ -520,7 +516,7 @@ void hyprdropDraw(PHLMONITOR mon) {
         const Vector2D Q = {GHOST.w / CAP->box.w, GHOST.h / CAP->box.h};
         CTexPassElement::SRenderData tex;
         tex.tex     = CAP->fb->getTexture();
-        tex.box     = PX(CBox{GHOST.pos() + (-g_hyprdropCaptureUsable.pos() - CAP->box.pos()) * Q, g_hyprdropCaptureMonSize * Q});
+        tex.box     = PX(CBox{GHOST.pos() + (-CAP->usablePos - CAP->box.pos()) * Q, CAP->monSize * Q});
         tex.clipBox = CBox{GHOST}.scale(mon->m_scale);
         tex.a       = HYPRDROP_GHOST_ALPHA;
         tex.damage  = CRegion{0, 0, INT16_MAX, INT16_MAX};

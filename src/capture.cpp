@@ -147,7 +147,21 @@ static void hyprdropCaptureLog(const std::string& s) {
         dbg(s);
 }
 
+// Usable area of `mon` (monitor minus the space reserved by bars), logical, monitor-local.
+static CBox hyprdropUsableOf(PHLMONITOR mon) {
+    const auto& R = mon->m_reservedArea;
+    const CBox  U = {R.left(), R.top(), mon->m_size.x - R.left() - R.right(), mon->m_size.y - R.top() - R.bottom()};
+    return U.w > 0 && U.h > 0 ? U : CBox{0, 0, mon->m_size.x, mon->m_size.y};
+}
+
+// `mon` is the overview's monitor. A workspace living on another monitor is rendered on
+// that one (its positions, size and scale), then fitted into the overview's views.
 static void hyprdropCaptureWorkspace(PHLMONITOR mon, PHLWORKSPACE ws, std::vector<HyprdropFB>& pool) {
+    const PHLMONITOR OVMON = mon;
+    if (const auto WSMON = ws->m_monitor.lock())
+        mon = WSMON;
+    const CBox USABLE = mon == OVMON ? g_hyprdropCaptureUsable : hyprdropUsableOf(mon);
+
     // Drawing order: tiled then floating, each in stack order (bottom to top).
     std::vector<PHLWINDOW> windows;
     for (bool floating : {false, true}) {
@@ -192,9 +206,9 @@ static void hyprdropCaptureWorkspace(PHLMONITOR mon, PHLWORKSPACE ws, std::vecto
         hyprdropRenderWindow(fb, mon, w);
 
         CBox box = w->getWindowMainSurfaceBox();
-        box.x -= mon->m_position.x + g_hyprdropCaptureUsable.x;
-        box.y -= mon->m_position.y + g_hyprdropCaptureUsable.y;
-        caps.push_back({w, fb, box, ws->m_id});
+        box.x -= mon->m_position.x + USABLE.x;
+        box.y -= mon->m_position.y + USABLE.y;
+        caps.push_back({w, fb, box, ws->m_id, mon->m_size, USABLE.pos()});
         if (const auto SURF = w->wlSurface() ? w->wlSurface()->resource() : nullptr)
             hyprdropCaptureLog(std::format("capture: '{}' window {:.0f}x{:.0f}, client surface {:.0f}x{:.0f} (buffer {:.0f}x{:.0f}), reported {:.0f}x{:.0f}, pending {:.0f}x{:.0f}, {} acks waiting{}", w->m_title, box.w, box.h,
                                            SURF->m_current.size.x, SURF->m_current.size.y, SURF->m_current.bufferSize.x, SURF->m_current.bufferSize.y,
@@ -221,6 +235,15 @@ static void hyprdropCaptureWorkspace(PHLMONITOR mon, PHLWORKSPACE ws, std::vecto
     // Special workspace: fit its windows' bounding box to the usable area.
     g_hyprdropFits.erase(ws->m_id);
     SHyprdropFit fit;
+    fit.origin = mon->m_position + USABLE.pos();
+    // Another monitor: its usable area scaled to fit the overview's, centered.
+    if (mon != OVMON) {
+        const Vector2D U = g_hyprdropCaptureUsable.size(), UW = USABLE.size();
+        const double   F = std::min(U.x / UW.x, U.y / UW.y);
+        fit.scale        = F;
+        fit.offset       = (U - UW * F) / 2.0;
+        hyprdropCaptureLog(std::format("capture: workspace {} is on monitor {}, fitted x{:.2f}", ws->m_id, mon->m_name, F));
+    }
     if (ISSPECIAL && !caps.empty()) {
         CBox bb = caps.front().box;
         for (const auto& c : caps) {
@@ -233,7 +256,8 @@ static void hyprdropCaptureWorkspace(PHLMONITOR mon, PHLWORKSPACE ws, std::vecto
         const Vector2D U = g_hyprdropCaptureUsable.size();
         if (bb.w > 0 && bb.h > 0) {
             const double F = std::min(U.x / bb.w, U.y / bb.h);
-            fit            = {F, -bb.pos() * F + (U - bb.size() * F) / 2.0};
+            fit.scale      = F;
+            fit.offset     = -bb.pos() * F + (U - bb.size() * F) / 2.0;
             hyprdropCaptureLog(std::format("capture: workspace {} fitted to the view, x{:.2f}", ws->m_id, F));
         }
     }
@@ -337,21 +361,17 @@ void hyprdropCapture(PHLMONITOR mon) {
         }
     }
     g_hyprdropCaptures.clear();
-    g_hyprdropCaptureMonSize = mon->m_size;
-    g_hyprdropCaptureScale   = mon->m_scale > 0 ? mon->m_scale : 1.0;
+    g_hyprdropCaptureScale = mon->m_scale > 0 ? mon->m_scale : 1.0;
 
-    // Usable area from the reserved area (left/top/right/bottom, logical px).
+    // Usable area from the reserved area (left/top/right/bottom, logical px); the whole
+    // monitor if nothing is left.
     const auto& R           = mon->m_reservedArea;
-    g_hyprdropCaptureUsable = {R.left(), R.top(), mon->m_size.x - R.left() - R.right(), mon->m_size.y - R.top() - R.bottom()};
+    g_hyprdropCaptureUsable = hyprdropUsableOf(mon);
     const CBox MINUS        = mon->logicalBoxMinusReserved();
     dbg(std::format("capture: monitor {} at ({:.0f},{:.0f}) {:.0f}x{:.0f} scale {:.2f}, reserved left {:.0f} top {:.0f} right {:.0f} bottom {:.0f}", mon->m_name,
                     mon->m_position.x, mon->m_position.y, mon->m_size.x, mon->m_size.y, g_hyprdropCaptureScale, R.left(), R.top(), R.right(), R.bottom()));
     dbg(std::format("capture: usable area (monitor-local) ({:.0f},{:.0f} {:.0f}x{:.0f}); logicalBoxMinusReserved() = ({:.0f},{:.0f} {:.0f}x{:.0f})",
                     g_hyprdropCaptureUsable.x, g_hyprdropCaptureUsable.y, g_hyprdropCaptureUsable.w, g_hyprdropCaptureUsable.h, MINUS.x, MINUS.y, MINUS.w, MINUS.h));
-    if (g_hyprdropCaptureUsable.w <= 0 || g_hyprdropCaptureUsable.h <= 0) {
-        dbg("capture: usable area is empty, falling back to the whole monitor");
-        g_hyprdropCaptureUsable = {0, 0, mon->m_size.x, mon->m_size.y};
-    }
 
     hyprdropCaptureWallpaper(mon);
 

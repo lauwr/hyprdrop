@@ -166,7 +166,9 @@ without going there.
 
 ## Limitations
 
-- One monitor: the overview opens on the focused monitor and does not handle the others.
+- Several monitors: the overview opens on the focused monitor only. Workspaces living on
+  other monitors are shown in it (their tile names the monitor) and windows can be sent to
+  them, but there is no overview on the other monitors at the same time.
 - The special workspace is `special:magic`; other special workspaces are not shown.
 - It uses Hyprland internals, so each Hyprland release may need a rebuild or a fix.
 

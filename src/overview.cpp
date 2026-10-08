@@ -92,7 +92,7 @@ void hyprdropShowOnTop(int TILE, const char* why) {
     g_hyprdropSlideStart  = std::chrono::steady_clock::now();
     g_hyprdropTopID = NEWD;
 
-    if (const auto MON = Desktop::focusState()->monitor())
+    if (const auto MON = hyprdropMonitor())
         g_pHyprRenderer->damageMonitor(MON);
 }
 
@@ -198,7 +198,7 @@ static void hyprdropGoToWindow(PHLMONITOR mon, PHLWINDOW WIN) {
 void hyprdropOnClickTimer() {
     const auto WIN = g_hyprdropClickWin.lock();
     g_hyprdropClickWin.reset();
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!g_hyprdropOpen || !WIN || !MON) {
         dbg("click: single click expired, overview closed or window gone, ignored");
         return;
@@ -377,7 +377,8 @@ static void hyprdropPlaceAt(PHLMONITOR mon, PHLWINDOW WIN, const Vector2D& DROP,
 // the drag). Nothing is done if it would land on its own current spot.
 static void hyprdropPlaceInTop(PHLMONITOR mon, PHLWINDOW WIN, const Vector2D& P) {
     const auto     L      = hyprdropLayout(mon->m_size);
-    const Vector2D ORIGIN = mon->m_position + g_hyprdropCaptureUsable.pos();
+    // D may live on another monitor: its fit knows where its usable area is.
+    const Vector2D ORIGIN = hyprdropFitOf(g_hyprdropTopID).origin.value_or(mon->m_position + g_hyprdropCaptureUsable.pos());
     const Vector2D DROP   = ORIGIN + hyprdropViewToUsable(g_hyprdropTopID, L.top, P);                         // cursor point on the real layout
     const Vector2D CORNER = ORIGIN + hyprdropViewToUsable(g_hyprdropTopID, L.top, P - g_hyprdropDragOffset); // window corner on the real layout
 
@@ -408,7 +409,7 @@ static void hyprdropMoveAndStay(PHLMONITOR mon, PHLWINDOW WIN, WORKSPACEID id) {
 // The cursor rested in the top view during a drag: place the window there for real.
 void hyprdropOnPreviewTimer() {
     const auto WIN = g_hyprdropDragWin.lock();
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!g_hyprdropOpen || !WIN || !MON)
         return;
     if (!hyprdropLayout(MON->m_size).top.containsPoint(g_hyprdropPointer))

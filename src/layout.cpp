@@ -8,6 +8,9 @@ static constexpr double     HYPRDROP_ACTIVE_SCALE   = 0.65;
 
 static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 8.0; // logical px between A's tile and its bar
 
+// Room under each row of tiles for the tiles' names (logical px).
+static constexpr double HYPRDROP_LABEL_SPACE = 24.0;
+
 // ---------------------------------------------------------------- animations
 
 // Open / close: the top view grows from the usable area (windows at their real place)
@@ -82,9 +85,10 @@ SHyprdropPlaced hyprdropPlace(const SHyprdropWinCapture& c, const CBox& view) {
     // usable-area point -> view point
     const auto MAP = [&](const Vector2D& pt) { return view.pos() + (C + (FP(pt) - C) * s) * k; };
 
-    // The texture covers the whole monitor, whose corner is at -usable.pos() here.
-    const Vector2D TEXPOS = -g_hyprdropCaptureUsable.pos();
-    return {CBox{MAP(TEXPOS), g_hyprdropCaptureMonSize * FIT.scale * s * k}, CBox{MAP(c.box.pos()), B.size() * s * k}};
+    // The texture covers the whole monitor it was rendered on, whose corner is at
+    // -usablePos here.
+    const Vector2D TEXPOS = -c.usablePos;
+    return {CBox{MAP(TEXPOS), c.monSize * FIT.scale * s * k}, CBox{MAP(c.box.pos()), B.size() * s * k}};
 }
 
 // Topmost captured window of workspace `id` under `P` when that workspace is drawn in `view`.
@@ -116,6 +120,8 @@ static SHyprdropLayout hyprdropAnimateLayout(SHyprdropLayout L, const CBox& U, c
     const double DY = (1.0 - P) * (S.y - L.strip.y);
     L.strip.y += DY;
     for (auto& t : L.tiles)
+        t.y += DY;
+    for (auto& t : L.labels)
         t.y += DY;
     if (!L.activeBar.empty())
         L.activeBar.y += DY;
@@ -160,7 +166,7 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     const int    A     = hyprdropActiveTile();
     const bool   AROW  = A >= 0 && A < (int)n;
     const double UNITS = n - (AROW ? 1.0 - HYPRDROP_ACTIVE_SCALE : 0.0);
-    double       h     = (stripH - (rows + 1) * rowGap) / rows;
+    double       h     = (stripH - (rows + 1) * rowGap - rows * HYPRDROP_LABEL_SPACE) / rows;
     double       w     = h * aspect;
 
     if (n > 0 && UNITS * w + (n - 1) * gap > availW) { // too many tiles: shrink them
@@ -168,8 +174,9 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
         h = w / aspect;
     }
 
-    // Rows centered vertically in the strip.
-    const double y0 = L.strip.y + (stripH - (rows * h + (rows - 1) * rowGap)) / 2;
+    // Rows (tiles + their names) centered vertically in the strip.
+    const double ROWH = h + HYPRDROP_LABEL_SPACE;
+    const double y0   = L.strip.y + (stripH - (rows * ROWH + (rows - 1) * rowGap)) / 2;
 
     double x = U.x + (U.w - (UNITS * w + (n - 1) * gap)) / 2;
     for (size_t i = 0; i < n; ++i) {
@@ -184,10 +191,17 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     // special:magic on the second row, with the trash (a smaller square, vertically
     // centered) on its right, both centered.
     if (MAGICROW) {
-        const double T  = h * 0.55;
-        const double X2 = U.x + (U.w - (w + gap + T)) / 2;
-        L.tiles.push_back(CBox{X2, y0 + h + rowGap, w, h});
-        L.trash = CBox{X2 + w + gap, y0 + h + rowGap + (h - T) / 2, T, T};
+        const double T   = h * 0.55;
+        const double TGAP = gap * 3; // the trash stands a bit apart from the tile
+        const double X2  = U.x + (U.w - (w + TGAP + T)) / 2;
+        L.tiles.push_back(CBox{X2, y0 + ROWH + rowGap, w, h});
+        L.trash = CBox{X2 + w + TGAP, y0 + ROWH + rowGap + (h - T) / 2, T, T};
+    }
+
+    // Names: under each row, centered under their tile, all on the row's baseline.
+    for (size_t i = 0; i < L.tiles.size(); ++i) {
+        const double ROWBOTTOM = i < n ? y0 + h : y0 + ROWH + rowGap + h;
+        L.labels.push_back(CBox{L.tiles[i].x, ROWBOTTOM, L.tiles[i].w, HYPRDROP_LABEL_SPACE});
     }
 
     // The bar sits in the space freed under A's smaller tile.

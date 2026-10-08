@@ -148,7 +148,7 @@ void hyprdropOnMove(Event::SCallbackInfo& info) {
     if (g_hyprdropTouchID >= 0 || g_hyprdropWarping)
         return;
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return;
 
@@ -189,7 +189,7 @@ void hyprdropStartDrag() {
         return;
     }
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return;
 
@@ -229,7 +229,7 @@ void hyprdropOnButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& inf
     if (e.button != BTN_LEFT)
         return;
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return;
 
@@ -287,7 +287,7 @@ void hyprdropOnTouchDown(const ITouch::SDownEvent& e, Event::SCallbackInfo& info
         return;
     }
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return;
 
@@ -309,7 +309,7 @@ void hyprdropOnTouchMotion(const ITouch::SMotionEvent& e, Event::SCallbackInfo& 
     if (e.touchID != g_hyprdropTouchID)
         return;
 
-    if (const auto MON = Desktop::focusState()->monitor())
+    if (const auto MON = hyprdropMonitor())
         hyprdropPointerMoved(MON, hyprdropTouchLocal(MON, e.pos));
 }
 
@@ -331,7 +331,7 @@ void hyprdropOnTouchUp(const ITouch::SUpEvent& e, Event::SCallbackInfo& info) {
     }
 
     dbg(std::format("touch: finger {} up at ({:.0f},{:.0f}) -> release", e.touchID, g_hyprdropPointer.x, g_hyprdropPointer.y));
-    if (const auto MON = Desktop::focusState()->monitor())
+    if (const auto MON = hyprdropMonitor())
         hyprdropOnRelease(MON);
 }
 
@@ -434,7 +434,7 @@ void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
     info.cancelled = true;
     g_hyprdropBlockedKeys.insert(e.keycode);
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (e.keycode == KEY_ESC) {
         dbg("key: Escape, closing");
         hyprdropClose(MON);
@@ -474,7 +474,7 @@ void hyprdropOnTabletTip(const CTablet::STipEvent& e, Event::SCallbackInfo& info
         return;
     }
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return;
 

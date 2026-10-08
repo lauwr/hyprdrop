@@ -17,8 +17,19 @@ static bool                                                    g_hyprdropNeedCap
 
 // ---------------------------------------------------------------- Lua + rendering
 
+// The overview's monitor while it is visible, else the focused one (where it would open).
+PHLMONITOR hyprdropMonitor() {
+    if (hyprdropVisible()) {
+        if (const auto MON = g_hyprdropMon.lock())
+            return MON;
+    }
+    return Desktop::focusState()->monitor();
+}
+
 // Opens the overview with D chosen by `mode`, or closes it if it is open.
 void hyprdropToggle(eHyprdropOpenMode mode) {
+    if (!g_hyprdropOpen)
+        g_hyprdropMon = Desktop::focusState()->monitor(); // opens on the focused monitor
     g_hyprdropOpen = !g_hyprdropOpen;
     hyprdropStartOpenAnim();
     if (g_hyprdropOpen)
@@ -28,7 +39,7 @@ void hyprdropToggle(eHyprdropOpenMode mode) {
 
     g_hyprdropHover = -1;
     if (!g_hyprdropOpen) // closing in the middle of a drag: undo the preview placements
-        hyprdropRestorePreview(Desktop::focusState()->monitor(), g_hyprdropDragWin.lock());
+        hyprdropRestorePreview(hyprdropMonitor(), g_hyprdropDragWin.lock());
     hyprdropCancelDrag();
     hyprdropCancelPendingClick("overview toggled");
     g_hyprdropSuperDrag = false;
@@ -43,7 +54,7 @@ void hyprdropToggle(eHyprdropOpenMode mode) {
         g_hyprdropTouchID = -1;
     }
 
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (MON)
         g_pHyprRenderer->damageMonitor(MON);
 }
@@ -80,7 +91,7 @@ static PHLWORKSPACE hyprdropMagicOpenOn(PHLMONITOR mon) {
 }
 
 static int luaGestureUp(lua_State*) {
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return 0;
 
@@ -118,7 +129,7 @@ static int luaGestureUp(lua_State*) {
 }
 
 static int luaGestureDown(lua_State*) {
-    const auto MON = Desktop::focusState()->monitor();
+    const auto MON = hyprdropMonitor();
     if (!MON)
         return 0;
 
@@ -145,7 +156,7 @@ static std::chrono::steady_clock::time_point g_hyprdropLiveSince;
 
 // Before each frame: if we just opened, capture.
 static void hyprdropPreRender(PHLMONITOR mon) {
-    if (!g_hyprdropOpen || !g_hyprdropNeedCapture || !mon || mon != Desktop::focusState()->monitor())
+    if (!g_hyprdropOpen || !g_hyprdropNeedCapture || !mon || mon != hyprdropMonitor())
         return;
 
     g_hyprdropNeedCapture = false;
@@ -157,7 +168,7 @@ static void hyprdropPreRender(PHLMONITOR mon) {
 // Before each frame (after the first capture): every workspace of the strip, and the
 // active one, is captured again. The next frame is requested once this one is done.
 static void hyprdropPreRenderLive(PHLMONITOR mon) {
-    if (!hyprdropVisible() || g_hyprdropNeedCapture || !mon || mon != Desktop::focusState()->monitor())
+    if (!hyprdropVisible() || g_hyprdropNeedCapture || !mon || mon != hyprdropMonitor())
         return;
 
     if (g_hyprdropClosing && hyprdropOpenProgress() <= 0.0) {
@@ -198,12 +209,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     });
 
     static auto P2 = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) {
-        if (stage == RENDER_POST_WINDOWS)
-            hyprdropDraw(Desktop::focusState()->monitor());
+        // Drawn only on the overview's monitor: this hook runs for every monitor rendered.
+        if (stage == RENDER_POST_WINDOWS) {
+            if (const auto MON = hyprdropMonitor(); MON && g_pHyprRenderer->m_renderData.pMonitor == MON)
+                hyprdropDraw(MON);
+        }
         // Live windows and animations: every finished frame asks for the next one. Damage
         // added before the frame (render.pre) is consumed by it and schedules nothing.
         else if (stage == RENDER_POST && hyprdropVisible() && !g_hyprdropCapturing) {
-            if (const auto MON = Desktop::focusState()->monitor())
+            if (const auto MON = hyprdropMonitor())
                 g_pHyprRenderer->damageMonitor(MON);
         }
     });
