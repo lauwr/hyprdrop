@@ -10,6 +10,19 @@ static void hyprdropAddIcon(PHLWINDOW w, const CBox& win, double monScale, const
 static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& tile, double monScale);
 static void hyprdropAddWorkspace(WORKSPACEID id, const CBox& box, double monScale, const CHyprColor& bg, std::optional<CBox> clip = std::nullopt);
 
+// Everything is laid out in logical px (like the pointer), but render pass elements take
+// boxes and rounding in physical px: PX() converts, at the scale of the monitor being drawn.
+// Border widths stay logical, Hyprland scales them itself.
+static double g_hyprdropDrawScale = 1.0;
+
+static CBox PX(const CBox& box) {
+    return CBox{box}.scale(g_hyprdropDrawScale);
+}
+
+static int PXR(double round) {
+    return std::round(round * g_hyprdropDrawScale);
+}
+
 // Used when general:col.active_border can't be read.
 static const CHyprColor HYPRDROP_ACTIVE_BAR_COLOR = CHyprColor{1.0, 0.6, 0.1, 1.0};
 
@@ -18,9 +31,9 @@ static constexpr double HYPRDROP_SLIDE_MS = 200.0;
 
 static void hyprdropAddRect(const CBox& box, const CHyprColor& color, double round) {
     CRectPassElement::SRectData rect;
-    rect.box   = box;
+    rect.box   = PX(box);
     rect.color = color;
-    rect.round = std::round(round);
+    rect.round = PXR(round);
     g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(rect));
 }
 
@@ -54,9 +67,9 @@ static void hyprdropAddRoundBorder(const CBox& box, double round, float rounding
     const auto* GRAD = ACTIVEBORDER.good() ? dynamic_cast<Config::CGradientValueData*>(ACTIVEBORDER.ptr()) : nullptr;
 
     CBorderPassElement::SBorderData data;
-    data.box           = box;
+    data.box           = PX(box);
     data.grad1         = color ? Config::CGradientValueData{*color} : GRAD && !GRAD->m_colors.empty() ? *GRAD : Config::CGradientValueData{HYPRDROP_ACTIVE_BAR_COLOR};
-    data.round         = std::round(round);
+    data.round         = PXR(round);
     data.roundingPower = roundingPower;
     data.borderSize    = std::max(1.0, std::round(width));
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
@@ -156,7 +169,7 @@ static void hyprdropAddIcon(PHLWINDOW w, const CBox& win, double monScale, const
 
     CTexPassElement::SRenderData data;
     data.tex    = TEX;
-    data.box    = {win.x + (win.w - SZ.x) / 2, win.y + (win.h - SZ.y) / 2, SZ.x, SZ.y};
+    data.box    = PX({win.x + (win.w - SZ.x) / 2, win.y + (win.h - SZ.y) / 2, SZ.x, SZ.y});
     if (!clip.empty())
         data.clipBox = CBox{clip}.scale(monScale);
     data.a      = alpha;
@@ -199,7 +212,7 @@ static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& tile, double monSca
 
     CTexPassElement::SRenderData data;
     data.tex    = tex;
-    data.box    = {SQ.x + (BOX.x - TS.x) / 2, SQ.y + (BOX.y - TS.y) / 2, TS.x, TS.y};
+    data.box    = PX({SQ.x + (BOX.x - TS.x) / 2, SQ.y + (BOX.y - TS.y) / 2, TS.x, TS.y});
     data.damage = CRegion{0, 0, INT16_MAX, INT16_MAX};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(data));
 }
@@ -250,7 +263,7 @@ static void hyprdropAddTrash(const CBox& box, double monScale) {
         return;
     CTexPassElement::SRenderData data;
     data.tex    = TEX;
-    data.box    = {box.x + (box.w - SIDE) / 2, box.y + (box.h - SIDE) / 2, SIDE, SIDE};
+    data.box    = PX({box.x + (box.w - SIDE) / 2, box.y + (box.h - SIDE) / 2, SIDE, SIDE});
     data.damage = CRegion{0, 0, INT16_MAX, INT16_MAX};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(data));
 }
@@ -282,7 +295,7 @@ static void hyprdropAddWorkspace(WORKSPACEID id, const CBox& box, double monScal
         CTexPassElement::SRenderData tex;
         tex.tex    = c.fb->getTexture();
         const auto PLACED = hyprdropPlace(c, box);
-        tex.box     = PLACED.tex;
+        tex.box     = PX(PLACED.tex);
         tex.clipBox = CBox{CLIP}.scale(monScale); // clipBox is in scaled (physical) coordinates
         tex.damage  = CRegion{0, 0, INT16_MAX, INT16_MAX};
         g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(tex));
@@ -298,12 +311,13 @@ void hyprdropDraw(PHLMONITOR mon) {
 
     const Vector2D S = mon->m_size;
     const auto     L = hyprdropLayout(S);
+    g_hyprdropDrawScale = mon->m_scale > 0 ? mon->m_scale : 1.0;
 
     // Background: the wallpaper alone (the bar, a top layer, is drawn over us anyway).
     if (g_hyprdropHasWallpaper && g_hyprdropWallpaperFB && g_hyprdropWallpaperFB->getTexture()) {
         CTexPassElement::SRenderData tex;
         tex.tex    = g_hyprdropWallpaperFB->getTexture();
-        tex.box    = {0, 0, S.x, S.y};
+        tex.box    = PX({0, 0, S.x, S.y});
         tex.damage = CRegion{0, 0, INT16_MAX, INT16_MAX};
         g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(tex));
     } else
@@ -346,7 +360,7 @@ void hyprdropDraw(PHLMONITOR mon) {
 
     // Strip: a dark veil over the blurred wallpaper.
     CRectPassElement::SRectData strip;
-    strip.box   = L.strip;
+    strip.box   = PX(L.strip);
     strip.color = HYPRDROP_STRIP_COLOR;
     strip.blur  = true;
     g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(strip));
@@ -393,13 +407,13 @@ void hyprdropDraw(PHLMONITOR mon) {
         const Vector2D Q = {GHOST.w / CAP->box.w, GHOST.h / CAP->box.h};
         CTexPassElement::SRenderData tex;
         tex.tex     = CAP->fb->getTexture();
-        tex.box     = CBox{GHOST.pos() + (-g_hyprdropCaptureUsable.pos() - CAP->box.pos()) * Q, g_hyprdropCaptureMonSize * Q};
+        tex.box     = PX(CBox{GHOST.pos() + (-g_hyprdropCaptureUsable.pos() - CAP->box.pos()) * Q, g_hyprdropCaptureMonSize * Q});
         tex.clipBox = CBox{GHOST}.scale(mon->m_scale);
         tex.a       = HYPRDROP_GHOST_ALPHA;
         tex.damage  = CRegion{0, 0, INT16_MAX, INT16_MAX};
         // Same rounding as the window, scaled like it.
         const double ROUND  = WIN->rounding() * GHOST.w / CAP->box.w;
-        tex.round         = std::round(ROUND);
+        tex.round         = PXR(ROUND);
         tex.roundingPower = WIN->roundingPower();
         g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(tex));
         hyprdropAddRoundBorder(GHOST, ROUND, WIN->roundingPower(), HYPRDROP_GHOST_FRAME);
