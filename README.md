@@ -15,7 +15,8 @@ Better quality: [docs/demo.mp4](docs/demo.mp4).
 - **Top view**: one workspace, shown live. Drag a window inside it to place it in the layout;
   while you hold it still, the layout already shows where it will land.
 - **Strip**: workspaces 1 to 10 (existing or not), the current one marked with a bar, and a
-  second row with `special:magic` ("Hidden") and a trash.
+  second row with the special workspaces (`special:magic` as "Hidden", then any other
+  existing one under its name) and a trash.
 - **Hover a tile** to show its workspace at the top; **click** it to go there.
 - **Drop a window on a tile** to move it there. Rest on the tile first to keep the overview
   open and follow it.
@@ -76,17 +77,25 @@ hl.bind(mainMod .. " + mouse:272", function() hl.plugin.hyprdrop.drag() end, { m
 hl.gesture({ fingers = 3, direction = "up",   action = function() hl.plugin.hyprdrop.gesture_up() end })
 hl.gesture({ fingers = 3, direction = "down", action = function() hl.plugin.hyprdrop.gesture_down() end })
 
--- Options (zqsd and debug default to false)
+-- Your close-window key, in a variable so hyprdrop can reuse it (see close_bind below)
+local closeWindowKey = mainMod .. " + C"
+hl.bind(closeWindowKey, hl.dsp.window.close())
+
+-- Options (all optional)
 hl.config({
     plugin = {
         hyprdrop = {
-            zqsd       = true,     -- the keys at the W A S D positions (Z Q S D on AZERTY) also navigate
-            icon_theme = "breeze", -- icon theme for app icons; default: your desktop's (GTK, KDE, gsettings)
-            debug      = true,     -- write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log
+            close_bind = closeWindowKey, -- this key also closes the window under the pointer in the overview
+            zqsd       = true,           -- the keys at the W A S D positions (Z Q S D on AZERTY) also navigate
+            icon_theme = "breeze",       -- icon theme for app icons; default: your desktop's (GTK, KDE, gsettings)
+            debug      = true,           -- write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log
         },
     },
 })
 ```
+
+If you load hyprdrop from `hyprland.lua` (`hl.plugin.load`), do it before the
+`plugin = { hyprdrop = ... }` options.
 
 | Lua function | Effect |
 |---|---|
@@ -95,9 +104,41 @@ hl.config({
 | `drag()` | Opens with the window under the cursor already dragged (bind it to a mouse button). |
 | `gesture_up()` / `gesture_down()` | For touchpad gestures, see above. |
 
-Colors follow your config: `general:col.active_border`, `decoration:rounding`, `general:gaps_in`.
-App icons come from your icon theme (and the themes it inherits), then `hicolor`, then
-`/usr/share/pixmaps`.
+| Option | Default | Effect |
+|---|---|---|
+| `close_bind` | `""` | `"MODS + KEY"` (e.g. `"SUPER + C"`) closing the window under the pointer, like Delete / BackSpace |
+| `zqsd` | `false` | Z Q S D (W A S D positions) navigate like the arrows |
+| `icon_theme` | `""` | Icon theme for app icons; empty = your desktop's |
+| `debug` | `false` | Debug log in `$XDG_RUNTIME_DIR/hyprdrop.log` |
+
+### What hyprdrop reads by itself, and what you set
+
+**Read automatically** from Hyprland and your desktop, nothing to configure:
+
+| What | Used for |
+|---|---|
+| `general:col.active_border` | Borders (shown tile, hovered window, ghost), the current workspace's bar, the trash icon |
+| `decoration:rounding`, each window's rounding and rounding power | Rounded corners of views, tiles and ghost |
+| `general:gaps_in` and workspace rules' `gaps_in` | Space between windows in the views (only the missing part is added) |
+| `general:border_size` (each window's) | Thickness of the hovered window's border |
+| `misc:font_family` | Tile names |
+| Space reserved by bars (layer-shell exclusive zones) | The overview fits in the rest of the screen |
+| Monitors: size, scale, which workspace is where | Layout, and workspaces of other monitors |
+| Special workspaces that exist | Their tiles; the names are saved in `~/.local/state/hyprdrop/specials` so the tiles stay once empty (delete a line to drop one) |
+| Icon theme: GTK `settings.ini`, KDE `kdeglobals`, else gsettings | App icons, unless `icon_theme` is set |
+| `.desktop` files (`Icon=`, `StartupWMClass=`, `Exec=`) | Which icon goes with which window |
+
+**Not read**, set them yourself in `hyprland.lua`:
+
+- Every binding and gesture: hyprdrop does nothing until a bind or gesture calls one of its
+  Lua functions.
+- Your close-window key: Hyprland binds are Lua functions hyprdrop can't look into, so repeat
+  it with `close_bind` (a shared variable, as above, keeps both in sync).
+
+**Built in**, while the overview is open (not configurable): Escape, Enter / Space, the
+arrows and keypad 4 6 8 2, Delete / BackSpace, mouse, touch, stylus and touchpad swipes. The
+key bind that opened the overview closes it; media / volume / brightness keys still work;
+every other key is blocked.
 
 ## Usage
 
@@ -113,6 +154,7 @@ App icons come from your icon theme (and the themes it inherits), then `hicolor`
 | Drag a window to the trash | Closes it |
 | Click the trash | Toggles the delete mode (a click on a window closes it) |
 | Click the background, Escape, the key bind that opened it | Closes the overview |
+| Delete, BackSpace, `close_bind` | Closes the window under the pointer |
 | Enter, Space | Goes to the workspace shown at the top |
 | Arrows, keypad 4 6 8 2 | Changes the workspace shown at the top |
 | 3-finger horizontal swipe | Changes the workspace shown at the top |
@@ -169,7 +211,8 @@ without going there.
 - Several monitors: the overview opens on the focused monitor only. Workspaces living on
   other monitors are shown in it (their tile names the monitor) and windows can be sent to
   them, but there is no overview on the other monitors at the same time.
-- The special workspace is `special:magic`; other special workspaces are not shown.
+- `special:magic` always has a tile; another special workspace gets one the first time
+  hyprdrop sees it existing, and keeps it (saved in `~/.local/state/hyprdrop/specials`).
 - It uses Hyprland internals, so each Hyprland release may need a rebuild or a fix.
 
 ## Development

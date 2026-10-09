@@ -2,8 +2,7 @@
 
 static SHyprdropLayout hyprdropAnimateLayout(SHyprdropLayout L, const CBox& U, const Vector2D& S);
 
-// Marking of A's tile: smaller than the others, with a bar under it.
-// A's slot is narrower, so the other tiles get more room.
+// Marking of A's tile: smaller than the others (in a full-size slot), with a bar under it.
 static constexpr double     HYPRDROP_ACTIVE_SCALE   = 0.65;
 static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 8.0; // logical px between A's tile and its bar
 
@@ -135,9 +134,9 @@ static SHyprdropLayout hyprdropAnimateLayout(SHyprdropLayout L, const CBox& U, c
 
 SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     SHyprdropLayout L;
-    const bool      MAGICROW = hyprdropHasMagicTile();
-    const size_t    n        = g_hyprdropTiles.size() - (MAGICROW ? 1 : 0); // tiles of the numbered row
-    const int       rows     = MAGICROW ? 2 : 1;
+    const size_t    m        = hyprdropSpecialTiles();      // special workspace tiles (second row)
+    const size_t    n        = g_hyprdropTiles.size() - m; // tiles of the numbered row
+    const int       rows     = m > 0 ? 2 : 1;
 
     // Everything is laid out inside the usable area, so the bar never covers the strip
     // (whole monitor until the first capture). Views also take its aspect ratio.
@@ -148,10 +147,11 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     const double gap    = U.w * 0.01;
     const double rowGap = U.h * 0.012;
     const double availW = U.w * 0.96;
-    // A's slot counts for HYPRDROP_ACTIVE_SCALE of a tile, so the others get more room.
+    // A's tile is smaller but keeps a full slot (centered in it), so the row is laid out as
+    // if every tile had the same size: the strip's columns line up with the screen center.
     const int    A     = hyprdropActiveTile();
     const bool   AROW  = A >= 0 && A < (int)n;
-    const double UNITS = n - (AROW ? 1.0 - HYPRDROP_ACTIVE_SCALE : 0.0);
+    const double UNITS = n;
 
     // The numbered row fills the width; the strip is as tall as its rows need, at most
     // HYPRDROP_STRIP_MAX of the height (then the tiles shrink and the row is centered).
@@ -185,21 +185,33 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     double x = U.x + (U.w - (UNITS * w + (n - 1) * gap)) / 2;
     for (size_t i = 0; i < n; ++i) {
         const double SC = AROW && (int)i == A ? HYPRDROP_ACTIVE_SCALE : 1.0;
-        L.tiles.push_back(CBox{x, y0 + (h - h * SC) / 2, w * SC, h * SC});
-        x += w * SC + gap;
+        L.tiles.push_back(CBox{x + (w - w * SC) / 2, y0 + (h - h * SC) / 2, w * SC, h * SC});
+        x += w + gap;
     }
     const double BARH = std::max(2.0, h * HYPRDROP_ACTIVE_SCALE * 0.05) + 1.0;
     if (AROW) // A's tile and its bar are centered together in the row
         L.tiles[A].y = y0 + (h - (L.tiles[A].h + HYPRDROP_ACTIVE_BAR_GAP + BARH)) / 2;
 
-    // special:magic on the second row, with the trash (a smaller square, vertically
-    // centered) on its right, both centered.
-    if (MAGICROW) {
-        const double T   = h * 0.55;
-        const double TGAP = gap * 3; // the trash stands a bit apart from the tile
-        const double X2  = U.x + (U.w - (w + TGAP + T)) / 2;
-        L.tiles.push_back(CBox{X2, y0 + ROWH + rowGap, w, h});
-        L.trash = CBox{X2 + w + TGAP, y0 + ROWH + rowGap + (h - T) / 2, T, T};
+    // Second row: special:magic ("Hidden", the first special tile) at the center of the
+    // screen, the other special workspaces as a group centered on the first quarter, the
+    // trash (a smaller square, vertically centered) on the third quarter. A group too wide
+    // for its quarter is pushed left so it never comes closer to Hidden than SIDE.
+    if (m > 0) {
+        const double T    = h * 0.55;
+        const double SIDE = gap * 7;
+        const double Y2   = y0 + ROWH + rowGap;
+        const double XH   = U.x + (U.w - w) / 2;
+        L.tiles.push_back(CBox{XH, Y2, w, h});
+        if (m > 1) {
+            const double GROUPW = (m - 1) * w + (m - 2) * gap;
+            const double RIGHT  = std::min(U.x + U.w / 4 + GROUPW / 2, XH - SIDE); // right edge of the group
+            double       x2     = RIGHT - w;                                      // closest to Hidden first
+            for (size_t i = 1; i < m; ++i) {
+                L.tiles.push_back(CBox{x2, Y2, w, h});
+                x2 -= w + gap; // spaced like numbered tiles
+            }
+        }
+        L.trash = CBox{std::max(U.x + U.w * 3 / 4 - T / 2, XH + w + SIDE), Y2 + (h - T) / 2, T, T};
     }
 
     // Names: under each row, centered under their tile, all on the row's baseline.

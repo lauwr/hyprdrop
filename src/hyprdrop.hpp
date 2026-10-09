@@ -30,6 +30,7 @@
 #include <unordered_set>
 #include <variant>
 #include <vector>
+#include <strings.h>
 
 // Like hyprexpo: beginRender/renderWorkspace are protected in 0.56 (and CWindow::m_suspended private).
 #define protected public
@@ -61,6 +62,9 @@
 #include <hyprland/src/config/shared/workspace/WorkspaceRuleManager.hpp>
 #include <hyprland/src/config/values/types/BoolValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/managers/SeatManager.hpp>
+#include <hyprland/src/devices/IKeyboard.hpp>
 #undef protected
 #undef private
 
@@ -162,7 +166,8 @@ struct SHyprdropPlaced {
 
 // ---------------------------------------------------------------- workspaces
 
-// Workspace ids of the strip's tiles: 1..10, A if outside that range, special:magic last.
+// Workspace ids of the strip's tiles: 1..10, A if outside that range, then the special
+// workspaces (special:magic first, then the other existing ones by name), on a second row.
 inline std::vector<WORKSPACEID> g_hyprdropTiles;
 inline WORKSPACEID              g_hyprdropTopID    = WORKSPACE_INVALID; // D (it may not exist yet)
 inline WORKSPACEID              g_hyprdropActiveID = WORKSPACE_INVALID; // A, its tile is marked
@@ -172,6 +177,11 @@ inline WORKSPACEID              g_hyprdropActiveID = WORKSPACE_INVALID; // A, it
 // (it is only created when a window is dropped on it).
 inline const std::string HYPRDROP_MAGIC_NAME = "special:magic";
 inline WORKSPACEID       g_hyprdropMagicID   = WORKSPACE_INVALID;
+
+// Special workspaces have negative ids (special:magic too, even before it exists).
+inline bool hyprdropIsSpecialID(WORKSPACEID id) {
+    return id != WORKSPACE_INVALID && id < 0;
+}
 
 // What D is when the overview opens.
 enum eHyprdropOpenMode : uint8_t {
@@ -251,6 +261,9 @@ inline bool                g_hyprdropWarping = false;
 inline SP<Config::Values::CBoolValue> g_hyprdropZqsd;
 // plugin:hyprdrop:icon_theme: icon theme for app icons; empty = the desktop's (GTK, KDE, gsettings).
 inline SP<Config::Values::CStringValue> g_hyprdropIconTheme;
+// plugin:hyprdrop:close_bind: "MODS + KEY" (e.g. "SUPER + C"): closes the window under the
+// pointer, like Delete and BackSpace. Meant to repeat the user's own close-window bind.
+inline SP<Config::Values::CStringValue> g_hyprdropCloseBind;
 
 // This horizontal swipe already changed the workspace shown (one step per swipe).
 inline bool g_hyprdropSwipeStepped = false;
@@ -298,7 +311,7 @@ SHyprdropFit hyprdropFitOf(WORKSPACEID id);
 Vector2D hyprdropViewToUsable(WORKSPACEID id, const CBox& view, const Vector2D& P);
 SHyprdropPlaced hyprdropPlace(const SHyprdropWinCapture& c, const CBox& view);
 std::optional<std::pair<PHLWINDOW, SHyprdropPlaced>> hyprdropCapturedWindowAt(WORKSPACEID id, const CBox& view, const Vector2D& P);
-bool hyprdropHasMagicTile();
+int hyprdropSpecialTiles();
 int hyprdropActiveTile();
 void hyprdropRecaptureWorkspace(PHLMONITOR mon, WORKSPACEID id);
 void hyprdropCapture(PHLMONITOR mon);
@@ -322,6 +335,7 @@ void hyprdropOnPreviewTimer();
 void hyprdropRestorePreview(PHLMONITOR mon, PHLWINDOW WIN);
 void hyprdropResetPreview();
 void hyprdropOnRelease(PHLMONITOR mon);
+bool hyprdropCloseHovered(PHLMONITOR mon);
 void hyprdropStartDrag();
 void hyprdropOnButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnAxis(Event::SCallbackInfo& info);

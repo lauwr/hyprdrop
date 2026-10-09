@@ -24,6 +24,10 @@ static Vector2D       g_hyprdropPreviewAnchor; // pointer position when the dela
 // shown. The next tile hovered by the mouse is therefore not shown (once; the pointer
 // reaching the top view clears it too). Touch is not concerned: a tap shows its tile.
 static bool g_hyprdropSkipNextHover = false;
+// The pointer reached the second row (special tiles, trash) during a drag: after the drop it
+// is still there, and the next tile hovered is meant, so the skip isn't armed until the
+// pointer has left the second row.
+static bool g_hyprdropSecondRowByDrag = false;
 
 // The key whose bind opened the overview (toggle_current() / toggle_hidden() from a key
 // bind), -1 = none (gesture, drag...). While open, pressing that key again is let through
@@ -81,8 +85,14 @@ static void hyprdropPointerMoved(PHLMONITOR MON, const Vector2D& P) {
         g_pHyprRenderer->damageMonitor(MON);
     }
 
-    const bool MOUSE = g_hyprdropTouchID < 0;
-    if (MOUSE && (g_hyprdropTrashHover || (hover >= 0 && g_hyprdropTiles[hover] == g_hyprdropMagicID)))
+    const bool MOUSE  = g_hyprdropTouchID < 0;
+    const bool SECOND = g_hyprdropTrashHover || (hover >= 0 && hyprdropIsSpecialID(g_hyprdropTiles[hover]));
+    if (!SECOND)
+        g_hyprdropSecondRowByDrag = false;
+    if (hyprdropDragging()) {
+        g_hyprdropSecondRowByDrag = g_hyprdropSecondRowByDrag || SECOND;
+        g_hyprdropSkipNextHover   = false;
+    } else if (MOUSE && SECOND && !g_hyprdropSecondRowByDrag)
         g_hyprdropSkipNextHover = true;
     else if (L.top.containsPoint(P))
         g_hyprdropSkipNextHover = false;
@@ -94,7 +104,7 @@ static void hyprdropPointerMoved(PHLMONITOR MON, const Vector2D& P) {
 
         // Without a drag, hovering a tile shows it in the top view, like a click.
         if (!hyprdropDragging() && hover >= 0) {
-            if (MOUSE && g_hyprdropSkipNextHover && g_hyprdropTiles[hover] != g_hyprdropMagicID) {
+            if (MOUSE && g_hyprdropSkipNextHover && !hyprdropIsSpecialID(g_hyprdropTiles[hover])) {
                 g_hyprdropSkipNextHover = false;
                 dbg("hover: tile " + std::to_string(hover) + " crossed coming from the second row, not shown");
             } else
@@ -395,22 +405,43 @@ static void hyprdropNavigate(int nav) {
         return;
     }
     if (nav == 2) {
-        if (!hyprdropHasMagicTile() || g_hyprdropTopID == g_hyprdropMagicID)
+        const int SPECIALS = hyprdropSpecialTiles();
+        if (SPECIALS == 0 || hyprdropIsSpecialID(g_hyprdropTopID))
             return;
         g_hyprdropBeforeMagicID = g_hyprdropTopID;
-        hyprdropShowOnTop((int)g_hyprdropTiles.size() - 1, "key down");
+        hyprdropShowOnTop((int)g_hyprdropTiles.size() - SPECIALS, "key down"); // the first special tile
         return;
     }
-    if (g_hyprdropTopID != g_hyprdropMagicID)
+    if (!hyprdropIsSpecialID(g_hyprdropTopID))
         return;
     const WORKSPACEID BACK = g_hyprdropBeforeMagicID != WORKSPACE_INVALID ? g_hyprdropBeforeMagicID : g_hyprdropActiveID;
     if (const auto IT = std::ranges::find(g_hyprdropTiles, BACK); IT != g_hyprdropTiles.end())
         hyprdropShowOnTop((int)(IT - g_hyprdropTiles.begin()), "key up");
 }
 
+// plugin:hyprdrop:close_bind ("SUPER + C"...) matches this key press: same key (by keysym
+// name, any case) and same modifiers (Caps Lock and Num Lock ignored).
+static bool hyprdropIsCloseBind(uint32_t keycode) {
+    const std::string BIND = g_hyprdropCloseBind ? std::string{g_hyprdropCloseBind->value()} : "";
+    const auto        KB   = g_pSeatManager->m_keyboard.lock();
+    if (BIND.empty() || !KB || !KB->m_xkbState)
+        return false;
+
+    const auto  PLUS = BIND.rfind('+');
+    std::string key  = PLUS == std::string::npos ? BIND : BIND.substr(PLUS + 1);
+    std::erase_if(key, ::isspace);
+    const uint32_t WANTMODS = PLUS == std::string::npos ? 0 : g_pKeybindManager->stringToModMask(BIND.substr(0, PLUS));
+
+    char           name[64] = {};
+    xkb_keysym_get_name(xkb_state_key_get_one_sym(KB->m_xkbState, keycode + 8), name, sizeof(name));
+    const uint32_t IGNORED = HL_MODIFIER_CAPS | HL_MODIFIER_MOD2;
+    return strcasecmp(name, key.c_str()) == 0 && (KB->getModifiers() & ~IGNORED) == (WANTMODS & ~IGNORED);
+}
+
 // While the overview is open: Escape closes, Enter / keypad Enter / Space go to the
 // workspace shown in the top view and close, arrows (keypad 4 8 6 2, optionally Z Q S D)
-// change the workspace shown, Fn-layer keys pass, every other key is swallowed.
+// change the workspace shown, Delete / BackSpace / close_bind close the window under the
+// pointer, Fn-layer keys pass, every other key is swallowed.
 void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
     const bool PRESSED = e.state == WL_KEYBOARD_KEY_STATE_PRESSED;
 
@@ -435,7 +466,10 @@ void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
     g_hyprdropBlockedKeys.insert(e.keycode);
 
     const auto MON = hyprdropMonitor();
-    if (e.keycode == KEY_ESC) {
+    if (MON && (e.keycode == KEY_DELETE || e.keycode == KEY_BACKSPACE || hyprdropIsCloseBind(e.keycode))) {
+        if (!hyprdropCloseHovered(MON))
+            dbg("key: close key, but no window under the pointer");
+    } else if (e.keycode == KEY_ESC) {
         dbg("key: Escape, closing");
         hyprdropClose(MON);
     } else if (e.keycode == KEY_ENTER || e.keycode == KEY_KPENTER || e.keycode == KEY_SPACE) {
@@ -511,7 +545,7 @@ static void hyprdropSwipeStep(int dir) {
     // Numbered tiles only (special:magic is on its own row).
     std::vector<int> numbered;
     for (int i = 0; i < (int)g_hyprdropTiles.size(); ++i) {
-        if (g_hyprdropTiles[i] != g_hyprdropMagicID)
+        if (!hyprdropIsSpecialID(g_hyprdropTiles[i]))
             numbered.push_back(i);
     }
     if (numbered.empty())

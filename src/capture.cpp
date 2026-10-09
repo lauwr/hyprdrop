@@ -12,6 +12,41 @@ static void hyprdropCaptureWallpaper(PHLMONITOR mon);
 // don't exist yet (drawn as empty tiles).
 static constexpr WORKSPACEID HYPRDROP_STRIP_WORKSPACES = 10;
 
+// Special workspaces other than special:magic: every one ever seen, by name -> id. They
+// keep their tile once empty (Hyprland destroys empty special workspaces), like the
+// numbered ones; a drop recreates them. The names are saved in
+// $XDG_STATE_HOME/hyprdrop/specials (default ~/.local/state), one per line, so they
+// survive reloads; delete a line to drop a tile.
+static std::map<std::string, WORKSPACEID> g_hyprdropKnownSpecials;
+static std::vector<WORKSPACEID>           g_hyprdropOtherSpecials; // their ids, by name
+
+static std::filesystem::path hyprdropSpecialsFile() {
+    const char*        STATE = getenv("XDG_STATE_HOME");
+    const std::string  HOME  = getenv("HOME") ? getenv("HOME") : "";
+    return std::filesystem::path(STATE && *STATE ? STATE : HOME + "/.local/state") / "hyprdrop" / "specials";
+}
+
+// Reads the saved names once (their ids are given at capture).
+static void hyprdropLoadSpecials() {
+    static bool loaded = false;
+    if (loaded)
+        return;
+    loaded = true;
+    std::ifstream in(hyprdropSpecialsFile());
+    for (std::string name; std::getline(in, name);) {
+        if (name.starts_with("special:") && name != HYPRDROP_MAGIC_NAME && !g_hyprdropKnownSpecials.contains(name))
+            g_hyprdropKnownSpecials[name] = WORKSPACE_INVALID;
+    }
+}
+
+static void hyprdropSaveSpecials() {
+    std::error_code ec;
+    std::filesystem::create_directories(hyprdropSpecialsFile().parent_path(), ec);
+    std::ofstream out(hyprdropSpecialsFile(), std::ios::trunc);
+    for (const auto& [name, id] : g_hyprdropKnownSpecials)
+        out << name << "\n";
+}
+
 // ---------------------------------------------------------------- workspaces
 
 // Existing workspace with this id, or nullptr.
@@ -33,7 +68,13 @@ PHLWORKSPACE hyprdropFindWorkspaceByName(const std::string& name) {
 
 // Name used when creating workspace `id`.
 std::string hyprdropWorkspaceName(WORKSPACEID id) {
-    return id == g_hyprdropMagicID ? HYPRDROP_MAGIC_NAME : std::to_string(id);
+    if (id == g_hyprdropMagicID)
+        return HYPRDROP_MAGIC_NAME;
+    for (const auto& [name, knownID] : g_hyprdropKnownSpecials) {
+        if (knownID == id)
+            return name;
+    }
+    return std::to_string(id);
 }
 
 // Finding the window under the cursor in the top view assumes the windows of D have
@@ -85,10 +126,16 @@ static void hyprdropRebuildTiles() {
         g_hyprdropTiles.push_back(g_hyprdropActiveID);
     if (g_hyprdropMagicID != WORKSPACE_INVALID)
         g_hyprdropTiles.push_back(g_hyprdropMagicID);
+    for (const auto ID : g_hyprdropOtherSpecials)
+        g_hyprdropTiles.push_back(ID);
 }
 
-bool hyprdropHasMagicTile() {
-    return g_hyprdropMagicID != WORKSPACE_INVALID && !g_hyprdropTiles.empty() && g_hyprdropTiles.back() == g_hyprdropMagicID;
+// Number of special workspace tiles, at the end of the strip (its second row).
+int hyprdropSpecialTiles() {
+    int n = 0;
+    for (auto it = g_hyprdropTiles.rbegin(); it != g_hyprdropTiles.rend() && hyprdropIsSpecialID(*it); ++it)
+        ++n;
+    return n;
 }
 
 // Index of A's tile in the strip, or -1.
@@ -406,6 +453,49 @@ void hyprdropCapture(PHLMONITOR mon) {
         dbg("capture magic: workspace " + std::to_string(MAGIC->m_id));
         hyprdropCheckPositions(mon, MAGIC);
         hyprdropCaptureWorkspace(mon, MAGIC, pool);
+    }
+
+    // The other special workspaces: the existing ones are remembered (and saved if new),
+    // then every known one gets a tile (by name), captured if it exists.
+    hyprdropLoadSpecials();
+    bool newName = false;
+    for (const auto& w : State::workspaceState()->workspacesCopy()) {
+        if (w && !w->inert() && w->m_isSpecialWorkspace && w->m_name != HYPRDROP_MAGIC_NAME) {
+            newName = newName || !g_hyprdropKnownSpecials.contains(w->m_name);
+            g_hyprdropKnownSpecials[w->m_name] = w->m_id;
+        }
+    }
+    if (newName)
+        hyprdropSaveSpecials();
+
+    // A special workspace that doesn't exist has no id: each gets a free one, distinct from
+    // the existing workspaces, special:magic's and each other (newSpecialID() alone would
+    // give them all the same). A drop recreates it with that id.
+    std::set<WORKSPACEID> used = {g_hyprdropMagicID};
+    for (const auto& w : State::workspaceState()->workspacesCopy()) {
+        if (w)
+            used.insert(w->m_id);
+    }
+    for (auto& [name, id] : g_hyprdropKnownSpecials) {
+        if (const auto WS = hyprdropFindWorkspaceByName(name)) {
+            id = WS->m_id;
+            continue;
+        }
+        if (id == WORKSPACE_INVALID || used.contains(id)) {
+            id = State::workspaceState()->newSpecialID();
+            while (used.contains(id))
+                ++id;
+        }
+        used.insert(id);
+    }
+    g_hyprdropOtherSpecials.clear();
+    for (const auto& [name, id] : g_hyprdropKnownSpecials) {
+        g_hyprdropOtherSpecials.push_back(id);
+        if (const auto WS = hyprdropFindWorkspace(id)) {
+            dbg("capture special: workspace " + std::to_string(id) + " (" + name + ")");
+            hyprdropCaptureWorkspace(mon, WS, pool);
+        } else
+            dbg("capture special: " + name + " doesn't exist anymore, empty tile");
     }
 
     if (g_hyprdropOpenMode == HYPRDROP_OPEN_MAGIC && !hyprdropCaptureOf(g_hyprdropMagicID)) {

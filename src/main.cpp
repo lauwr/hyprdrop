@@ -259,6 +259,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropZqsd);
     g_hyprdropIconTheme = makeShared<Config::Values::CStringValue>("plugin:hyprdrop:icon_theme", "icon theme for app icons, empty = the desktop's", "");
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropIconTheme);
+    g_hyprdropCloseBind = makeShared<Config::Values::CStringValue>("plugin:hyprdrop:close_bind", "MODS + KEY closing the window under the pointer", "");
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropCloseBind);
     g_hyprdropDebug = makeShared<Config::Values::CBoolValue>("plugin:hyprdrop:debug", "write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log", false);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropDebug);
 

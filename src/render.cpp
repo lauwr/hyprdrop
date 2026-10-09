@@ -137,18 +137,19 @@ static const std::vector<std::vector<std::string>>& hyprdropIconDirs() {
         if (!seen.insert(THEME).second)
             continue;
 
+        // The theme's index.theme is read from the first base that has one; its directories
+        // are then looked up in every base (a user dir like ~/.local/share/icons/hicolor
+        // usually has icons but no index.theme of its own).
+        struct SDir {
+            int  size = 0;
+            bool apps = false;
+        };
+        std::map<std::string, SDir> sections;
         for (const auto& base : BASES) {
-            const std::string ROOT = base + "/" + THEME;
-            std::ifstream     in(ROOT + "/index.theme");
+            std::ifstream in(base + "/" + THEME + "/index.theme");
             if (!in)
                 continue;
-            struct SDir {
-                std::string path;
-                int         size = 0;
-                bool        apps = false;
-            };
-            std::map<std::string, SDir> sections;
-            std::string                 line, cur;
+            std::string line, cur;
             while (std::getline(in, line)) {
                 if (!line.empty() && line.back() == '\r')
                     line.pop_back();
@@ -166,23 +167,27 @@ static const std::vector<std::vector<std::string>>& hyprdropIconDirs() {
                         queue.push_back(t);
                 } else if (cur != "Icon Theme") {
                     auto& d = sections[cur];
-                    d.path  = ROOT + "/" + cur;
                     if (K == "Context")
                         d.apps = V == "Applications" || V == "Apps";
                     else if (K == "Size")
                         d.size = std::atoi(V.c_str());
                 }
             }
-            std::vector<SDir> apps;
-            for (const auto& [name, d] : sections) {
-                if (d.apps && !name.contains("symbolic") && std::filesystem::is_directory(d.path, ec))
-                    apps.push_back(d);
-            }
-            std::ranges::sort(apps, [](const SDir& a, const SDir& b) { return a.size > b.size; });
-            auto& list = dirs.emplace_back();
-            for (const auto& d : apps)
-                list.push_back(d.path);
+            break;
         }
+
+        std::vector<std::pair<int, std::string>> apps; // size, path
+        for (const auto& base : BASES) {
+            for (const auto& [name, d] : sections) {
+                const std::string PATH = base + "/" + THEME + "/" + name;
+                if (d.apps && !name.contains("symbolic") && std::filesystem::is_directory(PATH, ec))
+                    apps.emplace_back(d.size, PATH);
+            }
+        }
+        std::ranges::stable_sort(apps, [](const auto& a, const auto& b) { return a.first > b.first; });
+        auto& list = dirs.emplace_back();
+        for (const auto& [size, path] : apps)
+            list.push_back(path);
     }
     dbg(std::format("icon: theme '{}', looked up in: {}", queue.front(), [&] {
         std::string s;
@@ -196,16 +201,25 @@ static const std::vector<std::vector<std::string>>& hyprdropIconDirs() {
 static std::string hyprdropDesktopIconName(const std::string& cls) {
     const std::string HOME = getenv("HOME") ? getenv("HOME") : "";
     const std::vector<std::string> DIRS = {HOME + "/.local/share/applications", "/usr/share/applications"};
-    const auto ICONOF = [](const std::filesystem::path& f) -> std::pair<std::string, std::string> { // icon, wm class
+    // Icon, StartupWMClass, and the program's name (Exec's first word, basename, no
+    // extension, lowercase): apps without StartupWMClass often have a class matching it
+    // (PacketTracer -> /usr/lib/packettracer/packettracer.AppImage).
+    const auto ICONOF = [](const std::filesystem::path& f) -> std::tuple<std::string, std::string, std::string> {
         std::ifstream in(f);
-        std::string   line, icon, wm;
+        std::string   line, icon, wm, exec;
         while (std::getline(in, line)) {
             if (line.starts_with("Icon=") && icon.empty())
                 icon = line.substr(5);
             else if (line.starts_with("StartupWMClass="))
                 wm = line.substr(15);
+            else if (line.starts_with("Exec=") && exec.empty()) {
+                auto prog = line.substr(5);
+                prog      = prog.substr(0, prog.find(' '));
+                exec      = std::filesystem::path(prog).stem().string();
+                std::ranges::transform(exec, exec.begin(), ::tolower);
+            }
         }
-        return {icon, wm};
+        return {icon, wm, exec};
     };
 
     // Every filesystem call takes an error_code: an exception thrown here (unreadable
@@ -216,7 +230,7 @@ static std::string hyprdropDesktopIconName(const std::string& cls) {
     for (const auto& d : DIRS) {
         for (const auto& name : {cls, lower}) {
             if (const auto F = d + "/" + name + ".desktop"; std::filesystem::exists(F, ec)) {
-                if (const auto ICON = ICONOF(F).first; !ICON.empty())
+                if (const auto ICON = std::get<0>(ICONOF(F)); !ICON.empty())
                     return ICON;
             }
         }
@@ -225,7 +239,7 @@ static std::string hyprdropDesktopIconName(const std::string& cls) {
         for (auto it = std::filesystem::directory_iterator(d, ec); !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
             if (it->path().extension() != ".desktop")
                 continue;
-            if (const auto [ICON, WM] = ICONOF(it->path()); !ICON.empty() && WM == cls)
+            if (const auto [ICON, WM, EXEC] = ICONOF(it->path()); !ICON.empty() && (WM == cls || EXEC == lower))
                 return ICON;
         }
     }
@@ -297,7 +311,12 @@ static constexpr int HYPRDROP_LABEL_PT = 14;
 
 static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& area, double monScale) {
     std::string TEXT = id == g_hyprdropMagicID ? "Hidden" : id == 10 ? "0" : std::to_string(id);
-    if (const auto WS = hyprdropFindWorkspace(id)) {
+    const auto  WS   = hyprdropFindWorkspace(id);
+    if (hyprdropIsSpecialID(id) && id != g_hyprdropMagicID) { // special:music -> "music", even once empty
+        const auto NAME = hyprdropWorkspaceName(id);
+        TEXT            = NAME.starts_with("special:") ? NAME.substr(8) : NAME;
+    }
+    if (WS) {
         if (const auto WSMON = WS->m_monitor.lock(); WSMON && WSMON != hyprdropMonitor())
             TEXT += " · " + WSMON->m_name;
     }

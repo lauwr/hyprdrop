@@ -159,18 +159,20 @@ void hyprdropCancelPendingClick(const char* why) {
     }
 }
 
-// Goes to workspace `id` (created if needed; special:magic is toggled open) and closes
-// the overview.
+// Goes to workspace `id` (created if needed; a special workspace is toggled open over the
+// current one) and closes the overview.
 void hyprdropGoToWorkspace(PHLMONITOR mon, WORKSPACEID id) {
     dbg("going to workspace " + std::to_string(id));
     hyprdropClose(mon);
 
     Config::Actions::ActionResult res;
-    if (id == g_hyprdropMagicID) {
-        const auto WS = hyprdropFindWorkspace(id);
-        if (!WS) {
-            dbg("go: " + HYPRDROP_MAGIC_NAME + " doesn't exist, nothing to open");
-            return;
+    if (hyprdropIsSpecialID(id)) {
+        auto WS = hyprdropFindWorkspace(id);
+        if (!WS) { // an empty special workspace keeps its tile: recreate it to open it
+            WS = State::workspaceState()->create(id, mon->m_id, hyprdropWorkspaceName(id), true);
+            dbg("go: special workspace " + hyprdropWorkspaceName(id) + (WS ? " recreated" : " could not be created"));
+            if (!WS)
+                return;
         }
         res = Config::Actions::toggleSpecial(WS);
     } else
@@ -192,6 +194,23 @@ static void hyprdropGoToWindow(PHLMONITOR mon, PHLWINDOW WIN) {
         dbg("go: focus failed: " + RES.error().message);
     else
         dbg("go: focus ok");
+}
+
+// Closes the window under the pointer in the top view (Delete, BackSpace, close_bind). The
+// overview stays open. False if there is none.
+bool hyprdropCloseHovered(PHLMONITOR mon) {
+    const auto L = hyprdropLayout(mon->m_size);
+    if (hyprdropDragging() || !L.top.containsPoint(g_hyprdropPointer))
+        return false;
+    const auto HIT = hyprdropCapturedWindowAt(g_hyprdropTopID, L.top, g_hyprdropPointer);
+    if (!HIT)
+        return false;
+    const auto WIN = HIT->first;
+    dbg("key: closing '" + WIN->m_title + "' (under the pointer)");
+    if (const auto RES = Config::Actions::closeWindow(WIN); !RES)
+        dbg("key: closing the window failed: " + RES.error().message);
+    g_pHyprRenderer->damageMonitor(mon);
+    return true;
 }
 
 // No second click came in time: single click action.
