@@ -50,6 +50,7 @@ void hyprdropToggle(eHyprdropOpenMode mode) {
     if (g_hyprdropOpen) {
         g_hyprdropNeedCapture = true;
         hyprdropRememberOpenKey();
+        hyprdropSkipNextHover(); // the mouse may rest where the strip appears
         // A lost touch up must not leave the mouse ignored for the whole session.
         g_hyprdropTouchID = -1;
     }

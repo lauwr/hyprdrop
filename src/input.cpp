@@ -25,8 +25,9 @@ static Vector2D       g_hyprdropPreviewAnchor; // pointer position when the dela
 // reaching the top view clears it too). Touch is not concerned: a tap shows its tile.
 static bool g_hyprdropSkipNextHover = false;
 
-// A window was just dropped on the second row (a special tile or the trash): going back up,
-// the tile crossed is not shown either.
+// A window was just dropped on the second row (a special tile or the trash), or the overview
+// just opened (the mouse may be resting where the strip appears): the next numbered tile
+// hovered is not shown either, until the pointer reaches the top view.
 void hyprdropSkipNextHover() {
     g_hyprdropSkipNextHover = true;
 }
@@ -91,7 +92,7 @@ static void hyprdropPointerMoved(PHLMONITOR MON, const Vector2D& P) {
     const bool SECOND = g_hyprdropTrashHover || (hover >= 0 && hyprdropIsSpecialID(g_hyprdropTiles[hover]));
     if (MOUSE && SECOND)
         g_hyprdropSkipNextHover = true;
-    else if (L.top.containsPoint(P))
+    else if (L.top.containsPoint(P) && hyprdropOpenProgress() >= 1.0) // while opening, the top view still covers everything
         g_hyprdropSkipNextHover = false;
 
     if (hover != g_hyprdropHover) {
