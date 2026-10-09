@@ -5,7 +5,7 @@ static SHyprdropLayout hyprdropAnimateLayout(SHyprdropLayout L, const CBox& U, c
 // Marking of A's tile: smaller than the others, with a bar under it.
 // A's slot is narrower, so the other tiles get more room.
 static constexpr double     HYPRDROP_ACTIVE_SCALE   = 0.65;
-static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 12.0; // logical px between A's tile and its bar
+static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 8.0; // logical px between A's tile and its bar
 
 
 // Room under each row of tiles for the tiles' names (logical px): about one line of text,
@@ -188,7 +188,7 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
         L.tiles.push_back(CBox{x, y0 + (h - h * SC) / 2, w * SC, h * SC});
         x += w * SC + gap;
     }
-    const double BARH = std::max(2.0, h * HYPRDROP_ACTIVE_SCALE * 0.05);
+    const double BARH = std::max(2.0, h * HYPRDROP_ACTIVE_SCALE * 0.05) + 1.0;
     if (AROW) // A's tile and its bar are centered together in the row
         L.tiles[A].y = y0 + (h - (L.tiles[A].h + HYPRDROP_ACTIVE_BAR_GAP + BARH)) / 2;
 
