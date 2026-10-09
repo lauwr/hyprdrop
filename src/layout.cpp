@@ -5,11 +5,14 @@ static SHyprdropLayout hyprdropAnimateLayout(SHyprdropLayout L, const CBox& U, c
 // Marking of A's tile: smaller than the others, with a bar under it.
 // A's slot is narrower, so the other tiles get more room.
 static constexpr double     HYPRDROP_ACTIVE_SCALE   = 0.65;
+static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 12.0; // logical px between A's tile and its bar
 
-static constexpr double     HYPRDROP_ACTIVE_BAR_GAP = 8.0; // logical px between A's tile and its bar
 
-// Room under each row of tiles for the tiles' names (logical px).
-static constexpr double HYPRDROP_LABEL_SPACE = 24.0;
+// Room under each row of tiles for the tiles' names (logical px): about one line of text,
+// so the strip's bottom margin (under the last names) matches its top one.
+static constexpr double HYPRDROP_LABEL_SPACE = 22.0;
+// Largest share of the usable height the strip may take.
+static constexpr double HYPRDROP_STRIP_MAX = 0.33;
 
 // ---------------------------------------------------------------- animations
 
@@ -142,11 +145,27 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     const CBox   U      = HASU ? g_hyprdropCaptureUsable : CBox{0, 0, S.x, S.y};
     const double aspect = U.w / U.h;
 
-    // The strip grows when it has the second row; the top view takes what's left.
-    const double stripH = U.h * (MAGICROW ? 0.25 : 0.15);
+    const double gap    = U.w * 0.01;
+    const double rowGap = U.h * 0.012;
+    const double availW = U.w * 0.96;
+    // A's slot counts for HYPRDROP_ACTIVE_SCALE of a tile, so the others get more room.
+    const int    A     = hyprdropActiveTile();
+    const bool   AROW  = A >= 0 && A < (int)n;
+    const double UNITS = n - (AROW ? 1.0 - HYPRDROP_ACTIVE_SCALE : 0.0);
+
+    // The numbered row fills the width; the strip is as tall as its rows need, at most
+    // HYPRDROP_STRIP_MAX of the height (then the tiles shrink and the row is centered).
+    // The top view takes what's left.
+    double w = n > 0 ? (availW - (n - 1) * gap) / UNITS : 0;
+    double h = w / aspect;
+    if (const double HMAX = (U.h * HYPRDROP_STRIP_MAX - (rows + 1) * rowGap - rows * HYPRDROP_LABEL_SPACE) / rows; h > HMAX) {
+        h = HMAX;
+        w = h * aspect;
+    }
+    const double stripH = g_hyprdropTiles.empty() ? U.h * 0.15 : rows * (h + HYPRDROP_LABEL_SPACE) + (rows + 1) * rowGap;
     L.strip             = {U.x, U.y + U.h - stripH, U.w, stripH};
 
-    const double margin = U.h * 0.02;
+    const double margin = U.h * 0.01;
     const double availH = L.strip.y - U.y - 2 * margin;
     double       TH     = availH;
     double       TW     = TH * aspect;
@@ -158,21 +177,6 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
 
     if (g_hyprdropTiles.empty())
         return hyprdropAnimateLayout(L, U, S);
-
-    const double gap    = U.w * 0.01;
-    const double rowGap = U.h * 0.015;
-    const double availW = U.w * 0.96;
-    // A's slot counts for HYPRDROP_ACTIVE_SCALE of a tile, so the others get more room.
-    const int    A     = hyprdropActiveTile();
-    const bool   AROW  = A >= 0 && A < (int)n;
-    const double UNITS = n - (AROW ? 1.0 - HYPRDROP_ACTIVE_SCALE : 0.0);
-    double       h     = (stripH - (rows + 1) * rowGap - rows * HYPRDROP_LABEL_SPACE) / rows;
-    double       w     = h * aspect;
-
-    if (n > 0 && UNITS * w + (n - 1) * gap > availW) { // too many tiles: shrink them
-        w = (availW - (n - 1) * gap) / UNITS;
-        h = w / aspect;
-    }
 
     // Rows (tiles + their names) centered vertically in the strip.
     const double ROWH = h + HYPRDROP_LABEL_SPACE;

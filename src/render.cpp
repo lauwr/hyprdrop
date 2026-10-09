@@ -315,9 +315,9 @@ static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& area, double monSca
     if (!tex)
         return;
 
-    // Centered in its area, straight on the strip.
+    // Right under the tile, centered horizontally, straight on the strip.
     const Vector2D TS  = tex->m_size / monScale;
-    const Vector2D POS = area.pos() + (area.size() - TS) / 2.0;
+    const Vector2D POS = {area.x + (area.w - TS.x) / 2, area.y};
 
     CTexPassElement::SRenderData data;
     data.tex    = tex;
@@ -354,14 +354,16 @@ static SP<Render::ITexture> hyprdropTrashIcon(const CHyprColor& color, int px) {
 
 // The trash: an empty tile with the icon in the active border color, red with a red border
 // while a dragged window is over it or the delete mode is on. Hovered by the pointer, its
-// border takes the active border color like a tile, even in delete mode (the icon stays red).
+// border takes the active border color like a tile; in delete mode it stays red and thickens.
 static void hyprdropAddTrash(const CBox& box, double monScale) {
     const bool DROP = hyprdropDragging() && g_hyprdropTrashHover;
     const bool HOT  = DROP || g_hyprdropDeleteMode;
     hyprdropAddRect(box, HYPRDROP_TILE_BG);
-    // Border: hovered by the pointer (not a drop) -> active border color, even in delete
-    // mode; otherwise red when hot.
-    if (g_hyprdropTrashHover && !DROP)
+    // Border: in delete mode, red, 2 px thicker while hovered; otherwise hovered by the
+    // pointer (not a drop) -> active border color; red when a window is dropped on it.
+    if (g_hyprdropDeleteMode)
+        hyprdropAddBorder(box, HYPRDROP_TILE_BORDER + (g_hyprdropTrashHover && !DROP ? 2.0 : 0.0), HYPRDROP_TRASH_HOT);
+    else if (g_hyprdropTrashHover && !DROP)
         hyprdropAddBorder(box, HYPRDROP_TILE_BORDER, hyprdropActiveBorderColor());
     else if (HOT)
         hyprdropAddBorder(box, HYPRDROP_TILE_BORDER, HYPRDROP_TRASH_HOT);
@@ -391,9 +393,13 @@ static void hyprdropAddWorkspace(WORKSPACEID id, const CBox& box, double monScal
     const auto CAPS = hyprdropCaptureOf(id);
     if (!CAPS) {
         // An empty view with no background would look like a rendering bug: show it as an
-        // empty tile does.
-        if (bg.a <= 0)
-            hyprdropAddRect(box.intersection(CLIP), HYPRDROP_TILE_BG, ROUND);
+        // empty tile does. Inset like windows are (they shrink by the extra gap around their
+        // center), so it has the size a full workspace's windows have.
+        if (bg.a <= 0) {
+            const double K     = box.w / g_hyprdropCaptureUsable.w;
+            const double INSET = (2 * HYPRDROP_GAPS_IN_REF + HYPRDROP_WINDOW_GAP) / g_hyprdropCaptureScale / 2 * K * hyprdropOpenProgress();
+            hyprdropAddRect(CBox{box}.expand(-INSET).intersection(CLIP), HYPRDROP_TILE_BG, ROUND);
+        }
         return;
     }
 
