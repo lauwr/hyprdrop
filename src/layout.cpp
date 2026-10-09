@@ -156,13 +156,16 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     // The numbered row fills the width; the strip is as tall as its rows need, at most
     // HYPRDROP_STRIP_MAX of the height (then the tiles shrink and the row is centered).
     // The top view takes what's left.
+    // Names take a second line (the monitor) when some workspace is on another monitor.
+    const double LABEL = HYPRDROP_LABEL_SPACE * (hyprdropAnyTileOnOtherMonitor() ? 1.8 : 1.0);
+
     double w = n > 0 ? (availW - (n - 1) * gap) / UNITS : 0;
     double h = w / aspect;
-    if (const double HMAX = (U.h * HYPRDROP_STRIP_MAX - (rows + 1) * rowGap - rows * HYPRDROP_LABEL_SPACE) / rows; h > HMAX) {
+    if (const double HMAX = (U.h * HYPRDROP_STRIP_MAX - (rows + 1) * rowGap - rows * LABEL) / rows; h > HMAX) {
         h = HMAX;
         w = h * aspect;
     }
-    const double stripH = g_hyprdropTiles.empty() ? U.h * 0.15 : rows * (h + HYPRDROP_LABEL_SPACE) + (rows + 1) * rowGap;
+    const double stripH = g_hyprdropTiles.empty() ? U.h * 0.15 : rows * (h + LABEL) + (rows + 1) * rowGap;
     L.strip             = {U.x, U.y + U.h - stripH, U.w, stripH};
 
     const double margin = U.h * 0.01;
@@ -179,7 +182,7 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
         return hyprdropAnimateLayout(L, U, S);
 
     // Rows (tiles + their names) centered vertically in the strip.
-    const double ROWH = h + HYPRDROP_LABEL_SPACE;
+    const double ROWH = h + LABEL;
     const double y0   = L.strip.y + (stripH - (rows * ROWH + (rows - 1) * rowGap)) / 2;
 
     double x = U.x + (U.w - (UNITS * w + (n - 1) * gap)) / 2;
@@ -217,7 +220,7 @@ SHyprdropLayout hyprdropLayout(const Vector2D& S) {
     // Names: under each row, centered under their tile, all on the row's baseline.
     for (size_t i = 0; i < L.tiles.size(); ++i) {
         const double ROWBOTTOM = i < n ? y0 + h : y0 + ROWH + rowGap + h;
-        L.labels.push_back(CBox{L.tiles[i].x, ROWBOTTOM, L.tiles[i].w, HYPRDROP_LABEL_SPACE});
+        L.labels.push_back(CBox{L.tiles[i].x, ROWBOTTOM, L.tiles[i].w, LABEL});
     }
 
     // The bar sits in the space freed under A's smaller tile.

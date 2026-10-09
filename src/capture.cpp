@@ -130,6 +130,18 @@ static void hyprdropRebuildTiles() {
         g_hyprdropTiles.push_back(ID);
 }
 
+// Some tile's workspace lives on another monitor than the overview's: its name gets a
+// second line (the monitor), so the layout leaves room for it.
+bool hyprdropAnyTileOnOtherMonitor() {
+    const auto MON = hyprdropMonitor();
+    for (const auto ID : g_hyprdropTiles) {
+        const auto WS = hyprdropFindWorkspace(ID);
+        if (WS && WS->m_monitor.lock() && WS->m_monitor.lock() != MON)
+            return true;
+    }
+    return false;
+}
+
 // Number of special workspace tiles, at the end of the strip (its second row).
 int hyprdropSpecialTiles() {
     int n = 0;

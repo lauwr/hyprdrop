@@ -312,6 +312,7 @@ Vector2D hyprdropViewToUsable(WORKSPACEID id, const CBox& view, const Vector2D& 
 SHyprdropPlaced hyprdropPlace(const SHyprdropWinCapture& c, const CBox& view);
 std::optional<std::pair<PHLWINDOW, SHyprdropPlaced>> hyprdropCapturedWindowAt(WORKSPACEID id, const CBox& view, const Vector2D& P);
 int hyprdropSpecialTiles();
+bool hyprdropAnyTileOnOtherMonitor();
 int hyprdropActiveTile();
 void hyprdropRecaptureWorkspace(PHLMONITOR mon, WORKSPACEID id);
 void hyprdropCapture(PHLMONITOR mon);

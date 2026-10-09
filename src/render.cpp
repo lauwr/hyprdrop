@@ -304,6 +304,27 @@ static void hyprdropAddIcon(PHLWINDOW w, const CBox& win, double monScale, const
     g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(data));
 }
 
+// A monitor's name for people: the maker's first word and the model from its EDID ("Samsung",
+// "Microstep MAG274QRF QD"), hex model codes left out; the connector ("HEADLESS 2") if
+// there is none. "-", "_" and "." become spaces, for readability.
+static std::string hyprdropMonitorLabel(PHLMONITOR mon) {
+    std::string make  = mon->m_output ? mon->m_output->make : "";
+    std::string model = mon->m_output ? mon->m_output->model : "";
+    make              = make.substr(0, make.find(' '));
+    if (model.starts_with("0x") || strcasecmp(model.c_str(), make.c_str()) == 0)
+        model.clear();
+    std::string s = make.empty() ? (model.empty() ? mon->m_name : model) : model.empty() ? make : make + " " + model;
+    std::ranges::replace_if(s, [](char c) { return c == '-' || c == '_' || c == '.'; }, ' ');
+    std::string out; // collapsed spaces, trimmed
+    for (char c : s) {
+        if (c != ' ' || (!out.empty() && out.back() != ' '))
+            out += c;
+    }
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+
 // Workspace name under its tile (in `area`), as on the keyboard: workspace 10 is "0".
 // special:magic shows "Hidden". A workspace living on another monitor shows that monitor's
 // name too. Text textures are made once and kept.
@@ -318,7 +339,7 @@ static void hyprdropAddTileLabel(WORKSPACEID id, const CBox& area, double monSca
     }
     if (WS) {
         if (const auto WSMON = WS->m_monitor.lock(); WSMON && WSMON != hyprdropMonitor())
-            TEXT += " · " + WSMON->m_name;
+            TEXT += "\n" + hyprdropMonitorLabel(WSMON);
     }
 
     auto& tex = g_hyprdropLabels[TEXT];
