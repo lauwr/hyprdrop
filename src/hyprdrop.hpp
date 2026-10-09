@@ -336,6 +336,7 @@ void hyprdropRestorePreview(PHLMONITOR mon, PHLWINDOW WIN);
 void hyprdropResetPreview();
 void hyprdropOnRelease(PHLMONITOR mon);
 bool hyprdropCloseHovered(PHLMONITOR mon);
+void hyprdropSkipNextHover();
 void hyprdropStartDrag();
 void hyprdropOnButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnAxis(Event::SCallbackInfo& info);

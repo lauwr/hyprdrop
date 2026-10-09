@@ -24,10 +24,12 @@ static Vector2D       g_hyprdropPreviewAnchor; // pointer position when the dela
 // shown. The next tile hovered by the mouse is therefore not shown (once; the pointer
 // reaching the top view clears it too). Touch is not concerned: a tap shows its tile.
 static bool g_hyprdropSkipNextHover = false;
-// The pointer reached the second row (special tiles, trash) during a drag: after the drop it
-// is still there, and the next tile hovered is meant, so the skip isn't armed until the
-// pointer has left the second row.
-static bool g_hyprdropSecondRowByDrag = false;
+
+// A window was just dropped on the second row (a special tile or the trash): going back up,
+// the tile crossed is not shown either.
+void hyprdropSkipNextHover() {
+    g_hyprdropSkipNextHover = true;
+}
 
 // The key whose bind opened the overview (toggle_current() / toggle_hidden() from a key
 // bind), -1 = none (gesture, drag...). While open, pressing that key again is let through
@@ -87,12 +89,7 @@ static void hyprdropPointerMoved(PHLMONITOR MON, const Vector2D& P) {
 
     const bool MOUSE  = g_hyprdropTouchID < 0;
     const bool SECOND = g_hyprdropTrashHover || (hover >= 0 && hyprdropIsSpecialID(g_hyprdropTiles[hover]));
-    if (!SECOND)
-        g_hyprdropSecondRowByDrag = false;
-    if (hyprdropDragging()) {
-        g_hyprdropSecondRowByDrag = g_hyprdropSecondRowByDrag || SECOND;
-        g_hyprdropSkipNextHover   = false;
-    } else if (MOUSE && SECOND && !g_hyprdropSecondRowByDrag)
+    if (MOUSE && SECOND)
         g_hyprdropSkipNextHover = true;
     else if (L.top.containsPoint(P))
         g_hyprdropSkipNextHover = false;

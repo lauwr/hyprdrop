@@ -526,6 +526,10 @@ void hyprdropOnRelease(PHLMONITOR mon) {
 
     // Dropped on the trash: the window is asked to close (it may still ask to save).
     // Drag mode closes the overview, as a quick drop does; otherwise it stays open.
+    // A drop on the second row: going back up, the first tile crossed isn't shown.
+    if ((!L.trash.empty() && L.trash.containsPoint(P)) || (ONTILE && hyprdropIsSpecialID(g_hyprdropTiles[TILE])))
+        hyprdropSkipNextHover();
+
     if (!L.trash.empty() && L.trash.containsPoint(P)) {
         dbg("release: on the trash, closing '" + WIN->m_title + "'");
         if (const auto RES = Config::Actions::closeWindow(WIN); !RES)
