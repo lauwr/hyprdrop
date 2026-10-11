@@ -62,6 +62,7 @@
 #include <hyprland/src/config/shared/workspace/WorkspaceRuleManager.hpp>
 #include <hyprland/src/config/values/types/BoolValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
@@ -264,6 +265,9 @@ inline SP<Config::Values::CStringValue> g_hyprdropIconTheme;
 // plugin:hyprdrop:close_bind: "MODS + KEY" (e.g. "SUPER + C"): closes the window under the
 // pointer, like Delete and BackSpace. Meant to repeat the user's own close-window bind.
 inline SP<Config::Values::CStringValue> g_hyprdropCloseBind;
+// plugin:hyprdrop:gesture_fingers: touchpad swipes with this many fingers up / down are
+// gesture_up() / gesture_down(), decided by hyprdrop (tolerant to sideways swipes). 0 = off.
+inline SP<Config::Values::CIntValue> g_hyprdropGestureFingers;
 
 // This horizontal swipe already changed the workspace shown (one step per swipe).
 inline bool g_hyprdropSwipeStepped = false;
@@ -350,6 +354,8 @@ void hyprdropOnKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
 void hyprdropOnTabletTip(const CTablet::STipEvent& e, Event::SCallbackInfo& info);
 void hyprdropToggle(eHyprdropOpenMode mode);
 PHLMONITOR hyprdropMonitor();
+void hyprdropGestureUp();
+void hyprdropGestureDown();
 void hyprdropRememberOpenKey();
 void hyprdropOnSwipeBegin(const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&);
 void hyprdropOnSwipeUpdate(const IPointer::SSwipeUpdateEvent& e, Event::SCallbackInfo& info);

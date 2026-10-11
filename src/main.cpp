@@ -91,10 +91,10 @@ static PHLWORKSPACE hyprdropMagicOpenOn(PHLMONITOR mon) {
     return SPECIAL && SPECIAL->m_name == HYPRDROP_MAGIC_NAME ? SPECIAL : nullptr;
 }
 
-static int luaGestureUp(lua_State*) {
+void hyprdropGestureUp() {
     const auto MON = hyprdropMonitor();
     if (!MON)
-        return 0;
+        return;
 
     if (!g_hyprdropOpen) {
         if (const auto MAGIC = hyprdropMagicOpenOn(MON)) {
@@ -102,11 +102,11 @@ static int luaGestureUp(lua_State*) {
             if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
                 dbg("gesture up: closing " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
             hyprdropToggle(HYPRDROP_OPEN_CURRENT);
-            return 0;
+            return;
         }
         dbg("gesture up: opening");
         hyprdropToggle(HYPRDROP_OPEN_MAGIC);
-        return 0;
+        return;
     }
 
     dbg("gesture up: overview open, closing and opening " + HYPRDROP_MAGIC_NAME);
@@ -118,36 +118,46 @@ static int luaGestureUp(lua_State*) {
         MAGIC         = State::workspaceState()->create(ID, MON->m_id, HYPRDROP_MAGIC_NAME, true);
         dbg("gesture up: " + HYPRDROP_MAGIC_NAME + (MAGIC ? " created" : " could not be created"));
         if (!MAGIC)
-            return 0;
+            return;
     }
     if (hyprdropMagicOpenOn(MON)) {
         dbg("gesture up: " + HYPRDROP_MAGIC_NAME + " already open");
-        return 0;
+        return;
     }
     if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
         dbg("gesture up: opening " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
-    return 0;
+    return;
 }
 
-static int luaGestureDown(lua_State*) {
+void hyprdropGestureDown() {
     const auto MON = hyprdropMonitor();
     if (!MON)
-        return 0;
+        return;
 
     if (g_hyprdropOpen) {
         dbg("gesture down: closing the overview");
         hyprdropClose(MON);
-        return 0;
+        return;
     }
 
     if (const auto MAGIC = hyprdropMagicOpenOn(MON)) {
         dbg("gesture down: closing " + HYPRDROP_MAGIC_NAME + ", back to the workspace under it");
         if (const auto RES = Config::Actions::toggleSpecial(MAGIC); !RES)
             dbg("gesture down: closing " + HYPRDROP_MAGIC_NAME + " failed: " + RES.error().message);
-        return 0;
+        return;
     }
 
     dbg("gesture down: nothing to do");
+    return;
+}
+
+static int luaGestureUp(lua_State*) {
+    hyprdropGestureUp();
+    return 0;
+}
+
+static int luaGestureDown(lua_State*) {
+    hyprdropGestureDown();
     return 0;
 }
 
@@ -262,6 +272,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropIconTheme);
     g_hyprdropCloseBind = makeShared<Config::Values::CStringValue>("plugin:hyprdrop:close_bind", "MODS + KEY closing the window under the pointer", "");
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropCloseBind);
+    g_hyprdropGestureFingers = makeShared<Config::Values::CIntValue>("plugin:hyprdrop:gesture_fingers", "fingers of the up / down swipes hyprdrop handles, 0 = off", 0);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropGestureFingers);
     g_hyprdropDebug = makeShared<Config::Values::CBoolValue>("plugin:hyprdrop:debug", "write a debug log to $XDG_RUNTIME_DIR/hyprdrop.log", false);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_hyprdropDebug);
 

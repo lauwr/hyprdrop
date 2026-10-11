@@ -73,9 +73,6 @@ hl.bind(mainMod .. " + SHIFT + TAB", function() hl.plugin.hyprdrop.toggle_hidden
 -- Super + left button on a window: drag it into the overview
 hl.bind(mainMod .. " + mouse:272", function() hl.plugin.hyprdrop.drag() end, { mouse = true })
 
--- Touchpad: 3 fingers up opens, up again opens special:magic; down closes / goes back
-hl.gesture({ fingers = 3, direction = "up",   action = function() hl.plugin.hyprdrop.gesture_up() end })
-hl.gesture({ fingers = 3, direction = "down", action = function() hl.plugin.hyprdrop.gesture_down() end })
 
 -- Your close-window key, in a variable so hyprdrop can reuse it (see close_bind below)
 local closeWindowKey = mainMod .. " + C"
@@ -85,6 +82,7 @@ hl.bind(closeWindowKey, hl.dsp.window.close())
 hl.config({
     plugin = {
         hyprdrop = {
+            gesture_fingers = 3,         -- touchpad: 3 fingers up opens, up again opens special:magic; down closes / goes back
             close_bind = closeWindowKey, -- this key also closes the window under the pointer in the overview
             zqsd       = true,           -- the keys at the W A S D positions (Z Q S D on AZERTY) also navigate
             icon_theme = "breeze",       -- icon theme for app icons; default: your desktop's (GTK, KDE, gsettings)
@@ -102,10 +100,11 @@ If you load hyprdrop from `hyprland.lua` (`hl.plugin.load`), do it before the
 | `toggle_hidden()` | Opens with `special:magic` at the top (the current workspace if it is empty), or closes. |
 | `toggle_current()` | Opens with the current workspace at the top, or closes. |
 | `drag()` | Opens with the window under the cursor already dragged (bind it to a mouse button). |
-| `gesture_up()` / `gesture_down()` | For touchpad gestures, see above. |
+| `gesture_up()` / `gesture_down()` | What the up / down swipes do, if you'd rather bind them yourself (`hl.gesture`). |
 
 | Option | Default | Effect |
 |---|---|---|
+| `gesture_fingers` | `0` | Fingers of the up / down touchpad swipes hyprdrop handles (0 = off) |
 | `close_bind` | `""` | `"MODS + KEY"` (e.g. `"SUPER + C"`) closing the window under the pointer, like Delete / BackSpace |
 | `zqsd` | `false` | Z Q S D (W A S D positions) navigate like the arrows |
 | `icon_theme` | `""` | Icon theme for app icons; empty = your desktop's |
@@ -130,8 +129,8 @@ If you load hyprdrop from `hyprland.lua` (`hl.plugin.load`), do it before the
 
 **Not read**, set them yourself in `hyprland.lua`:
 
-- Every binding and gesture: hyprdrop does nothing until a bind or gesture calls one of its
-  Lua functions.
+- Every binding: hyprdrop does nothing until a bind calls one of its Lua functions, or
+  `gesture_fingers` turns on its up / down touchpad swipes.
 - Your close-window key: Hyprland binds are Lua functions hyprdrop can't look into, so repeat
   it with `close_bind` (a shared variable, as above, keeps both in sync).
 
@@ -195,7 +194,11 @@ on the current workspace with that window already held. It works the same, excep
 
 ### Touchpad gestures
 
-With `gesture_up()` / `gesture_down()` bound to 3-finger swipes (see Configuration):
+With `gesture_fingers = 3` (see Configuration). hyprdrop recognises these swipes itself, as
+soon as their direction is clear: a swipe starting a bit sideways still counts as vertical
+(Hyprland's own `hl.gesture` decides after 5 px and would take it as horizontal). The first
+30 px of every swipe are held back to decide; a horizontal one with the overview closed is
+then left to Hyprland (e.g. your workspace swipe).
 
 | State | Up | Down |
 |---|---|---|

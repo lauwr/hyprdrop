@@ -523,24 +523,36 @@ void hyprdropOnTabletTip(const CTablet::STipEvent& e, Event::SCallbackInfo& info
 
 // ---------------------------------------------------------------- gestures
 
-// Horizontal touchpad swipe while the overview is open: shows the previous / next numbered
-// workspace in the top view, without going there (one step per swipe, like Hyprland's
-// workspace swipe: fingers to the left = next), as soon as the swipe is long enough. Vertical swipes are left alone, for
-// gesture_up() / gesture_down(). Once a swipe is seen to be horizontal, its updates are
-// swallowed so Hyprland's own workspace swipe doesn't run; its end is let through so
-// Hyprland's gesture state is closed.
+// Touchpad swipes, decided by hyprdrop itself (Hyprland decides a swipe's direction after
+// 5 px, so a swipe starting slightly sideways turns into a horizontal one):
+//   - with plugin:hyprdrop:gesture_fingers fingers, a vertical swipe is gesture_up() /
+//     gesture_down(), triggered as soon as its direction is clear; the rest of it is
+//     swallowed, so Hyprland's own gestures don't also run;
+//   - while the overview is open, a horizontal swipe shows the previous / next numbered
+//     workspace in the top view (one step per swipe, fingers to the left = next).
+// The first HYPRDROP_SWIPE_DECIDE px are swallowed while undecided; a swipe counts as
+// vertical unless clearly horizontal (HYPRDROP_SWIPE_BIAS). A horizontal swipe with the
+// overview closed is then left to Hyprland (its workspace swipe), minus those first px.
 static constexpr double HYPRDROP_SWIPE_DECIDE    = 30.0;  // accumulated delta needed to tell the direction
-
+static constexpr double HYPRDROP_SWIPE_BIAS      = 1.5;   // horizontal only if |dx| > BIAS * |dy|
 static constexpr double HYPRDROP_SWIPE_THRESHOLD = 150.0; // accumulated horizontal delta for one step
 
-static bool             g_hyprdropSwipeActive     = false;
+enum eHyprdropSwipe : uint8_t {
+    HYPRDROP_SWIPE_NONE,       // not ours: left to Hyprland
+    HYPRDROP_SWIPE_UNDECIDED,  // ours until its direction is known
+    HYPRDROP_SWIPE_VERTICAL,   // gesture_up / gesture_down done, rest swallowed
+    HYPRDROP_SWIPE_HORIZONTAL, // overview open: workspace step
+};
+static eHyprdropSwipe g_hyprdropSwipe = HYPRDROP_SWIPE_NONE;
+static uint32_t       g_hyprdropSwipeFingers = 0;
+static Vector2D       g_hyprdropSwipeDelta;
 
-static bool             g_hyprdropSwipeHorizontal = false;
-
-static Vector2D         g_hyprdropSwipeDelta;
+static bool hyprdropGestureFingers(uint32_t fingers) {
+    return g_hyprdropGestureFingers && g_hyprdropGestureFingers->value() > 0 && (uint32_t)g_hyprdropGestureFingers->value() == fingers;
+}
 
 static void hyprdropSwipeStep(int dir) {
-    // Numbered tiles only (special:magic is on its own row).
+    // Numbered tiles only (special workspaces are on their own row).
     std::vector<int> numbered;
     for (int i = 0; i < (int)g_hyprdropTiles.size(); ++i) {
         if (!hyprdropIsSpecialID(g_hyprdropTiles[i]))
@@ -564,52 +576,62 @@ static void hyprdropSwipeStep(int dir) {
 }
 
 void hyprdropOnSwipeBegin(const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo&) {
-    g_hyprdropSwipeActive     = g_hyprdropOpen;
-    g_hyprdropSwipeHorizontal = false;
-    g_hyprdropSwipeDelta      = {};
-    g_hyprdropSwipeStepped    = false;
-    if (g_hyprdropSwipeActive)
+    g_hyprdropSwipeFingers = e.fingers;
+    g_hyprdropSwipeDelta   = {};
+    g_hyprdropSwipeStepped = false;
+    g_hyprdropSwipe        = g_hyprdropOpen || hyprdropGestureFingers(e.fingers) ? HYPRDROP_SWIPE_UNDECIDED : HYPRDROP_SWIPE_NONE;
+    if (g_hyprdropSwipe != HYPRDROP_SWIPE_NONE)
         dbg(std::format("swipe: begin ({} fingers)", e.fingers));
 }
 
 void hyprdropOnSwipeUpdate(const IPointer::SSwipeUpdateEvent& e, Event::SCallbackInfo& info) {
-    if (!g_hyprdropSwipeActive || !g_hyprdropOpen)
+    if (g_hyprdropSwipe == HYPRDROP_SWIPE_NONE)
         return;
 
     g_hyprdropSwipeDelta = g_hyprdropSwipeDelta + e.delta;
+    const Vector2D D     = g_hyprdropSwipeDelta;
 
-    if (!g_hyprdropSwipeHorizontal) {
-        // Undecided updates are swallowed too: Hyprland's own workspace swipe would start
-        // moving the active workspace, and the live capture shows it shaking. A vertical
-        // swipe only loses these first few pixels.
-        if (std::abs(g_hyprdropSwipeDelta.x) < HYPRDROP_SWIPE_DECIDE && std::abs(g_hyprdropSwipeDelta.y) < HYPRDROP_SWIPE_DECIDE) {
+    if (g_hyprdropSwipe == HYPRDROP_SWIPE_UNDECIDED) {
+        if (std::abs(D.x) < HYPRDROP_SWIPE_DECIDE && std::abs(D.y) < HYPRDROP_SWIPE_DECIDE) {
             info.cancelled = true;
             return;
         }
-        if (std::abs(g_hyprdropSwipeDelta.y) >= std::abs(g_hyprdropSwipeDelta.x)) {
-            dbg("swipe: vertical, left to Hyprland");
-            g_hyprdropSwipeActive = false;
+        if (std::abs(D.x) <= HYPRDROP_SWIPE_BIAS * std::abs(D.y)) { // vertical, even a bit sideways
+            if (!hyprdropGestureFingers(g_hyprdropSwipeFingers)) {
+                dbg("swipe: vertical, not hyprdrop's finger count, left to Hyprland");
+                g_hyprdropSwipe = HYPRDROP_SWIPE_NONE;
+                return;
+            }
+            g_hyprdropSwipe = HYPRDROP_SWIPE_VERTICAL;
+            info.cancelled  = true;
+            dbg(std::format("swipe: vertical ({:.0f},{:.0f}) -> gesture {}", D.x, D.y, D.y < 0 ? "up" : "down"));
+            if (D.y < 0)
+                hyprdropGestureUp();
+            else
+                hyprdropGestureDown();
             return;
         }
-        g_hyprdropSwipeHorizontal = true;
+        if (!g_hyprdropOpen) {
+            dbg("swipe: horizontal, overview closed, left to Hyprland");
+            g_hyprdropSwipe = HYPRDROP_SWIPE_NONE;
+            return;
+        }
+        g_hyprdropSwipe = HYPRDROP_SWIPE_HORIZONTAL;
         dbg("swipe: horizontal, handled by hyprdrop");
     }
 
     info.cancelled = true;
 
     // One step per swipe, as soon as it is long enough (not on release).
-    if (!g_hyprdropSwipeStepped && std::abs(g_hyprdropSwipeDelta.x) >= HYPRDROP_SWIPE_THRESHOLD) {
+    if (g_hyprdropSwipe == HYPRDROP_SWIPE_HORIZONTAL && g_hyprdropOpen && !g_hyprdropSwipeStepped && std::abs(D.x) >= HYPRDROP_SWIPE_THRESHOLD) {
         g_hyprdropSwipeStepped = true;
-        hyprdropSwipeStep(g_hyprdropSwipeDelta.x < 0 ? +1 : -1);
+        hyprdropSwipeStep(D.x < 0 ? +1 : -1);
     }
 }
 
+// The end is let through, so Hyprland's gesture state is closed.
 void hyprdropOnSwipeEnd(const IPointer::SSwipeEndEvent& e, Event::SCallbackInfo&) {
-    const bool WAS = g_hyprdropSwipeActive && g_hyprdropSwipeHorizontal;
-    g_hyprdropSwipeActive     = false;
-    g_hyprdropSwipeHorizontal = false;
-    if (!WAS || !g_hyprdropOpen)
-        return;
-
-    dbg(std::format("swipe: end, dx = {:.0f}{}{}", g_hyprdropSwipeDelta.x, e.cancelled ? " (cancelled)" : "", g_hyprdropSwipeStepped ? ", workspace changed" : ""));
+    if (g_hyprdropSwipe != HYPRDROP_SWIPE_NONE)
+        dbg(std::format("swipe: end, delta ({:.0f},{:.0f}){}", g_hyprdropSwipeDelta.x, g_hyprdropSwipeDelta.y, e.cancelled ? " (cancelled)" : ""));
+    g_hyprdropSwipe = HYPRDROP_SWIPE_NONE;
 }
